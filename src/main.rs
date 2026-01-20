@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use bit_vec::BitVec;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -32,6 +33,7 @@ fn walk_object(name: &str, x: &Value, result: &mut Vec<String>) {
 fn main() -> Result<(), std::io::Error> {
     let mut peers = &mut HashSet::new();
     let socket = UdpSocket::bind("0.0.0.0:34254")?;
+    std::env::set_current_dir("./pejovu");
     loop {
         let mut buf = [0; 0x10000];
         let (_amt, src) = socket.recv_from(&mut buf).expect("socket err");
@@ -43,6 +45,7 @@ fn main() -> Result<(), std::io::Error> {
             match message["message_type"].as_str().unwrap() {
                 "Please suggest peers." => suggest_peers(&socket, src, &peers),
                 "suggested peers" => receive_peers(peers, message),
+                "Please send content." => send_content(&socket, src, &peers, message),
                 _ => (),
             };
             let mut result = vec![];
@@ -74,3 +77,36 @@ fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> () {
     }
 }
 
+fn send_content(
+    socket: &UdpSocket,
+    src: SocketAddr,
+    peers: &HashSet<SocketAddr>,
+    message_in: &Value,
+) -> () {
+    if message_in["content_sha256"].as_str().unwrap().find("/") != None {
+        return;
+    };
+    if message_in["content_sha256"].as_str().unwrap().find("\\") != None {
+        return;
+    };
+    let mut file = File::open(message_in["content_sha256"].as_str().unwrap()).unwrap();
+    let mut to_read = message_in["content_length"].as_u64().unwrap() as usize;
+    if to_read > 4096 {
+        to_read = 4096
+    }
+    let mut content = vec![0; to_read];
+    let content_length = file
+        .read_at(&mut content, message_in["content_offset"].as_u64().unwrap())
+        .unwrap();
+    let encoded: String = general_purpose::STANDARD_NO_PAD.encode(content);
+    let mut message_out = json!([
+        {"message_type": "content",
+        "content_offset":  message_in["content_offset"],
+        "content":  encoded,
+        "content_length":  content_length
+        }
+    ]);
+    let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
+    println!("sending content {:?}", str::from_utf8(&message_bytes));
+    socket.send_to(&message_bytes, src);
+}
