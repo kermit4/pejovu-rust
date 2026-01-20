@@ -57,11 +57,10 @@ fn suggest_peers(socket: &UdpSocket, src: SocketAddr, peers: &HashSet<SocketAddr
     println!("sending peers {:?}", peers);
     let p: Vec<SocketAddr> = peers.into_iter().cloned().collect();
 
-    let mut message = json!([null]);
-    message[0] = json!(
+    let mut message = json!([
         {"message_type":
         "suggested peers",
-        "peers":  serde_json::to_value(p).unwrap()});
+        "peers":  serde_json::to_value(p).unwrap()}]);
     let message_bytes: Vec<u8> = serde_json::to_vec(&message).unwrap();
     println!("sending peers {:?}", str::from_utf8(&message_bytes));
     socket.send_to(&message_bytes, src);
@@ -74,3 +73,4 @@ fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> () {
         peers.insert(sa);
     }
 }
+
