@@ -54,13 +54,13 @@ fn main() -> Result<(), std::io::Error> {
         for message_in in &object {
             println!("type {}", message_in);
             println!("type {}", message_in["message_type"]);
-            let reply = json!(match message_in["message_type"].as_str().unwrap() {
+            let reply = match message_in["message_type"].as_str().unwrap() {
                 "Please send peers." => send_peers(&peers),
                 "These are peers." => receive_peers(&mut peers, message_in),
                 //                "Please send content." => send_content(&peers, message_in),
                 //                "Here is content." => receive_content(&socket, src, &peers, message_in),
                 _ => json!(serde_json::Value::Null),
-            });
+            };
             if reply != Null {
                 message_out.push(json!(reply))
             };
