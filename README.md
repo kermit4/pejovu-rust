@@ -19,5 +19,6 @@ To request a file, run with the sha256 as an arguement.  It will be placed in ./
 File sharing is a primitive example common use case, not the only intended purpose.
 
 # TODO
--  save peer list 
--  save transfer state to resume transfers if the application is restarted
+- save peer list 
+- chose random port on first run, but then stick with it on restarts
+- save transfer state to resume transfers if the application is restarted

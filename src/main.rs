@@ -31,7 +31,9 @@ fn walk_object(name: &str, x: &Value, result: &mut Vec<String>) {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    let mut peers = &mut HashSet::new();
+    let mut peers: HashSet<SocketAddr>= HashSet::new();
+    peers.insert("159.69.54.127:34254".parse().unwrap());
+    peers.insert("148.71.89.128:34254".parse().unwrap());
     let socket = UdpSocket::bind("0.0.0.0:34254")?;
     std::env::set_current_dir("./pejovu");
     loop {
@@ -44,7 +46,7 @@ fn main() -> Result<(), std::io::Error> {
             println!("type {}", message["message_type"]);
             match message["message_type"].as_str().unwrap() {
                 "Please send peers." => send_peers(&socket, src, &peers),
-                "Receive peers." => receive_peers(peers, message),
+                "Receive peers." => receive_peers(&mut peers, message),
                 "Please send content." => send_content(&socket, src, &peers, message),
                 "Receive content." => receive_content(&socket, src, &peers, message),
                 _ => (),
