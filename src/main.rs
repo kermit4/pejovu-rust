@@ -89,7 +89,7 @@ fn main() -> Result<(), std::io::Error> {
                 _ => Null,
             };
             if reply != Null {
-                message_out.push(json!(reply))
+                message_out.push(reply)
             };
             let mut result = vec![];
             walk_object("rot", message_in, &mut result);
@@ -118,7 +118,7 @@ fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
         let sa: SocketAddr = p.as_str().unwrap().parse().unwrap();
         peers.insert(sa);
     }
-    return json!(serde_json::Value::Null);
+    return Null;
 }
 
 fn send_content(message_in: &Value) -> Value {
@@ -261,7 +261,7 @@ fn bump_inbounds(
         for p in peers.iter() {
             debug!("p loop");
             let mut message_out: Vec<Value> = Vec::new();
-            message_out.push(json!(request_content_block(i)));
+            message_out.push(request_content_block(i));
             let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
             debug!(
                 "sending message {:?} to {:?}",
