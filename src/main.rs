@@ -3,7 +3,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
 use serde_json::{json, Value, Value::Null};
-use env_log::{info, debug, warn};
+use log::{info, debug, warn};
 //use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::collections::HashSet;
