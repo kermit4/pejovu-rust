@@ -71,7 +71,7 @@ fn main() -> Result<(), std::io::Error> {
                 let mut to_remove = "".to_owned();
                 for i in inbound_states.values_mut() {
                     println!("is loop");
-                    if (i.blocks_complete * 4096 > i.eof) {
+                    if (i.blocks_complete * 4096 >= i.eof) {
                         to_remove = i.sha256.as_str().to_owned();
                         continue;
                     }
@@ -213,12 +213,12 @@ fn receive_content(
 }
 //
 fn request_content_block(inbound_state: &mut InboundState) -> Value {
-    if (inbound_state.blocks_complete * 4096 > inbound_state.eof) {
+    if (inbound_state.blocks_complete * 4096 >= inbound_state.eof) {
         return Null;
     }
     while {
         inbound_state.next_block += 1;
-        if inbound_state.next_block * 4096 > inbound_state.eof {
+        if inbound_state.next_block * 4096 >= inbound_state.eof {
             inbound_state.next_block = 0; }
         inbound_state.bitmap[inbound_state.next_block] } {
         }
