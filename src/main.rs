@@ -3,6 +3,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
 use serde_json::{json, Value, Value::Null};
+use env_log::{info, debug, warn};
 //use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -23,17 +24,18 @@ use std::vec;
 const PLEASE_SEND_CONTENT: &str = "Please send content.";
 fn walk_object(name: &str, x: &Value, result: &mut Vec<String>) {
     let Value::Object(x) = x else { return };
-    println!("name {:?}", name);
-    println!("value {:?}", x);
+    debug!("name {:?}", name);
+    debug!("value {:?}", x);
     result.push(name.to_string());
     for (name, field) in x {
-        println!("name {:?}", name);
-        println!("field {:?}", field);
+        debug!("name {:?}", name);
+        debug!("field {:?}", field);
         walk_object(&name, field, result);
     }
 }
 
 fn main() -> Result<(), std::io::Error> {
+    env_logger::init();
     let mut peers: HashSet<SocketAddr> = HashSet::new();
     peers.insert("148.71.89.128:24254".parse().unwrap());
     peers.insert("159.69.54.127:24254".parse().unwrap());
@@ -44,25 +46,25 @@ fn main() -> Result<(), std::io::Error> {
     args.next();
     let mut inbound_states: HashMap<String, InboundState> = HashMap::new();
     for v in args {
-        println!("queing new {:?}", v);
+        info!("queing new {:?}", v);
         new_inbound_state(&mut inbound_states, v.as_str());
     }
     loop {
         let mut buf = [0; 0x10000];
         socket.set_read_timeout(Some(Duration::new(1, 0)))?;
-        println!("main loop");
+        debug!("main loop");
 
         bump_inbounds(&mut inbound_states, &peers, &socket);
         let (_amt, src) = match socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
-                println!("too quiet, asking for more peers");
+                warn!("too quiet, asking for more peers");
                 for p in peers.iter() {
-                    println!("p loop");
+                    debug!("p loop");
                     let mut message_out: Vec<Value> = Vec::new();
                     message_out.push(json!({"message_type":"Please send peers."})); // let people know im here
                     let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-                    println!(
+                    debug!(
                         "sending message {:?} to {:?}",
                         str::from_utf8(&message_bytes),
                         p
@@ -73,12 +75,12 @@ fn main() -> Result<(), std::io::Error> {
             }
         };
         let messages: Vec<Value> = serde_json::from_slice(&buf[0.._amt]).unwrap();
-        println!("{:?} said something", src);
+        debug!("{:?} said something", src);
         peers.insert(src);
         let mut message_out: Vec<Value> = Vec::new();
         for message_in in &messages {
-            println!("message {}", message_in);
-            println!("type {}", message_in["message_type"]);
+            debug!("message {}", message_in);
+            debug!("type {}", message_in["message_type"]);
             let reply = match message_in["message_type"].as_str().unwrap() {
                 "Please send peers." => send_peers(&peers),
                 "These are peers." => receive_peers(&mut peers, message_in),
@@ -91,19 +93,19 @@ fn main() -> Result<(), std::io::Error> {
             };
             let mut result = vec![];
             walk_object("rot", message_in, &mut result);
-            println!("{:?}", result);
+            debug!("{:?}", result);
         }
         if message_out.len() == 0 {
             continue;
         }
         let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-        println!("sending message {:?}", str::from_utf8(&message_bytes));
+        debug!("sending message {:?}", str::from_utf8(&message_bytes));
         socket.send_to(&message_bytes, src).ok();
     }
 }
 
 fn send_peers(peers: &HashSet<SocketAddr>) -> Value {
-    println!("sending peers {:?}", peers);
+    debug!("sending peers {:?}", peers);
     let p: Vec<SocketAddr> = peers.into_iter().cloned().collect();
     return json!(
         {"message_type": "These are peers.",
@@ -112,7 +114,7 @@ fn send_peers(peers: &HashSet<SocketAddr>) -> Value {
 
 fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
     for p in message["peers"].as_array().unwrap() {
-        println!(" a peer {:?}", p);
+        debug!(" a peer {:?}", p);
         let sa: SocketAddr = p.as_str().unwrap().parse().unwrap();
         peers.insert(sa);
     }
@@ -124,7 +126,7 @@ fn send_content(message_in: &Value) -> Value {
     if sha256.find("/") != None || sha256.find("\\") != None {
         return Null;
     };
-    println!("going to send {:?}", sha256);
+    debug!("going to send {:?}", sha256);
     let file = match File::open(sha256) {
         Ok(_r) => _r,
         _ => return Null,
@@ -251,17 +253,17 @@ fn bump_inbounds(
             continue;
         }
         i.last_bumped = SystemTime::now();
-        println!("is loop");
+        debug!("is loop");
         if i.blocks_complete * 4096 >= i.eof {
             to_remove = i.sha256.as_str().to_owned();
             continue;
         }
         for p in peers.iter() {
-            println!("p loop");
+            debug!("p loop");
             let mut message_out: Vec<Value> = Vec::new();
             message_out.push(json!(request_content_block(i)));
             let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-            println!(
+            debug!(
                 "sending message {:?} to {:?}",
                 str::from_utf8(&message_bytes),
                 p
@@ -269,7 +271,7 @@ fn bump_inbounds(
             socket.send_to(&message_bytes, p).ok();
         }
     }
-    println!("maybe removing {:?}", to_remove);
+    info!("maybe removing {:?}", to_remove);
     if to_remove != "" {
         let path = "./incoming/".to_owned() + &to_remove;
         let new_path = "./".to_owned() + &to_remove;
