@@ -212,14 +212,6 @@ fn receive_content(
 }
 //
 fn request_content_block(inbound_state: &mut InboundState) -> Value {
-    println!(
-        "{}",
-        inbound_state
-            .bitmap
-            .iter()
-            .position(|x| x == false)
-            .unwrap()
-    );
     if (inbound_state.blocks_complete * 4096 > inbound_state.eof) {
         return Null;
     }
