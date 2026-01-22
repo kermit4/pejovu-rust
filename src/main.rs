@@ -2,21 +2,20 @@
 
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
-use serde_json::{json, Map, Value, Value::Null};
-use sha2::{Digest, Sha256};
+use serde_json::{json, Value, Value::Null};
+//use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::convert::TryInto;
+//use std::convert::TryInto;
 use std::env;
-use std::fmt;
+//use std::fmt;
 use std::fs;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io::copy;
-use std::mem::transmute;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+//use std::io::copy;
+use std::net::{SocketAddr, UdpSocket};
 use std::os::unix::fs::FileExt;
-use std::path::Path;
+//use std::path::Path;
 use std::str;
 use std::time::{Duration, SystemTime};
 use std::vec;
@@ -39,8 +38,8 @@ fn main() -> Result<(), std::io::Error> {
     peers.insert("148.71.89.128:24254".parse().unwrap());
     peers.insert("159.69.54.127:24254".parse().unwrap());
     let socket = UdpSocket::bind("0.0.0.0:0")?;
-    fs::create_dir("./pejovu");
-    std::env::set_current_dir("./pejovu");
+    fs::create_dir("./pejovu").ok();
+    std::env::set_current_dir("./pejovu").unwrap();
     let mut args = env::args();
     args.next();
     let mut inbound_states: HashMap<String, InboundState> = HashMap::new();
@@ -52,10 +51,12 @@ fn main() -> Result<(), std::io::Error> {
         let mut buf = [0; 0x10000];
         socket.set_read_timeout(Some(Duration::new(1, 0)))?;
         println!("main loop");
+
+        bump_inbounds(&mut inbound_states, &peers, &socket);
         let (_amt, src) = match socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
-                println!("inactivity, bumping transfer and asking for more peers");
+                println!("too quiet, asking for more peers");
                 for p in peers.iter() {
                     println!("p loop");
                     let mut message_out: Vec<Value> = Vec::new();
@@ -66,35 +67,8 @@ fn main() -> Result<(), std::io::Error> {
                         str::from_utf8(&message_bytes),
                         p
                     );
-                    socket.send_to(&message_bytes, p);
+                    socket.send_to(&message_bytes, p).ok();
                 }
-                let mut to_remove = "".to_owned();
-                for i in inbound_states.values_mut() {
-                    println!("is loop");
-                    if (i.blocks_complete * 4096 >= i.eof) {
-                        to_remove = i.sha256.as_str().to_owned();
-                        continue;
-                    }
-                    for p in peers.iter() {
-                        println!("p loop");
-                        let mut message_out: Vec<Value> = Vec::new();
-                        message_out.push(json!(request_content_block(i)));
-                        let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-                        println!(
-                            "sending message {:?} to {:?}",
-                            str::from_utf8(&message_bytes),
-                            p
-                        );
-                        socket.send_to(&message_bytes, p);
-                    }
-                }
-                println!("maybe removing {:?}", to_remove);
-                if to_remove != "" {
-                    let path = "./incoming/".to_owned() + &to_remove;
-                    let new_path = "./".to_owned() + &to_remove;
-                    fs::rename(path, new_path);
-                    inbound_states.remove(&to_remove);
-                };
                 continue;
             }
         };
@@ -124,9 +98,8 @@ fn main() -> Result<(), std::io::Error> {
         }
         let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
         println!("sending message {:?}", str::from_utf8(&message_bytes));
-        socket.send_to(&message_bytes, src);
+        socket.send_to(&message_bytes, src).ok();
     }
-    Ok(())
 }
 
 fn send_peers(peers: &HashSet<SocketAddr>) -> Value {
@@ -152,7 +125,7 @@ fn send_content(message_in: &Value) -> Value {
         return Null;
     };
     println!("going to send {:?}", sha256);
-    let mut file = match File::open(sha256) {
+    let file = match File::open(sha256) {
         Ok(_r) => _r,
         _ => return Null,
     };
@@ -185,22 +158,25 @@ fn receive_content(
     if !inbound_states.contains_key(sha256) {
         return Null;
     }
-    let mut inbound_state = inbound_states.get_mut(sha256).unwrap();
+    let inbound_state = inbound_states.get_mut(sha256).unwrap();
     if sha256.find("/") != None || sha256.find("\\") != None {
         return Null;
     };
     let offset = message_in["content_offset"].as_i64().unwrap() as usize;
-    let block = ((offset / 4096) as usize);
+    let block = (offset / 4096) as usize;
     if inbound_state.bitmap[block] {
         return Null;
     }
     let content_bytes = general_purpose::STANDARD_NO_PAD
         .decode(message_in["content_b64"].as_str().unwrap())
         .unwrap();
-    inbound_state.file.write_at(
-        &content_bytes,
-        message_in["content_offset"].as_u64().unwrap(),
-    );
+    inbound_state
+        .file
+        .write_at(
+            &content_bytes,
+            message_in["content_offset"].as_u64().unwrap(),
+        )
+        .unwrap();
     inbound_state.blocks_complete += 1;
     inbound_state.eof = message_in["content_eof"].as_i64().unwrap() as usize;
     let blocks = (inbound_state.eof + 4095) / 4096;
@@ -213,15 +189,16 @@ fn receive_content(
 }
 //
 fn request_content_block(inbound_state: &mut InboundState) -> Value {
-    if (inbound_state.blocks_complete * 4096 >= inbound_state.eof) {
+    if inbound_state.blocks_complete * 4096 >= inbound_state.eof {
         return Null;
     }
     while {
         inbound_state.next_block += 1;
         if inbound_state.next_block * 4096 >= inbound_state.eof {
-            inbound_state.next_block = 0; }
-        inbound_state.bitmap[inbound_state.next_block] } {
+            inbound_state.next_block = 0;
         }
+        inbound_state.bitmap[inbound_state.next_block]
+    } {}
     return json!(
         {"message_type": PLEASE_SEND_CONTENT,
         "content_id":  inbound_state.sha256,
@@ -232,7 +209,7 @@ fn request_content_block(inbound_state: &mut InboundState) -> Value {
 }
 
 fn new_inbound_state(inbound_states: &mut HashMap<String, InboundState>, sha256: &str) -> () {
-    fs::create_dir("./incoming");
+    fs::create_dir("./incoming").ok();
     let path = "./incoming/".to_owned() + &sha256;
     let mut inbound_state = InboundState {
         file: OpenOptions::new()
@@ -246,6 +223,7 @@ fn new_inbound_state(inbound_states: &mut HashMap<String, InboundState>, sha256:
         sha256: sha256.to_string(),
         eof: 1,
         blocks_complete: 0,
+        last_bumped: SystemTime::now() - Duration::from_secs(5),
     };
     inbound_state.bitmap.resize(1, false);
     inbound_states.insert(sha256.to_string(), inbound_state);
@@ -258,5 +236,44 @@ struct InboundState {
     sha256: String,
     eof: usize,
     blocks_complete: usize,
+    last_bumped: SystemTime,
     // last host
+}
+
+fn bump_inbounds(
+    inbound_states: &mut HashMap<String, InboundState>,
+    peers: &HashSet<SocketAddr>,
+    socket: &UdpSocket,
+) -> () {
+    let mut to_remove = "".to_owned();
+    for i in inbound_states.values_mut() {
+        if i.last_bumped.elapsed().unwrap().as_secs() < 1 {
+            continue;
+        }
+        i.last_bumped = SystemTime::now();
+        println!("is loop");
+        if i.blocks_complete * 4096 >= i.eof {
+            to_remove = i.sha256.as_str().to_owned();
+            continue;
+        }
+        for p in peers.iter() {
+            println!("p loop");
+            let mut message_out: Vec<Value> = Vec::new();
+            message_out.push(json!(request_content_block(i)));
+            let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
+            println!(
+                "sending message {:?} to {:?}",
+                str::from_utf8(&message_bytes),
+                p
+            );
+            socket.send_to(&message_bytes, p).ok();
+        }
+    }
+    println!("maybe removing {:?}", to_remove);
+    if to_remove != "" {
+        let path = "./incoming/".to_owned() + &to_remove;
+        let new_path = "./".to_owned() + &to_remove;
+        fs::rename(path, new_path).unwrap();
+        inbound_states.remove(&to_remove);
+    };
 }
