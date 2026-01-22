@@ -39,6 +39,7 @@ fn main() -> Result<(), std::io::Error> {
     peers.insert("148.71.89.128:24254".parse().unwrap());
     peers.insert("159.69.54.127:24254".parse().unwrap());
     let socket = UdpSocket::bind("0.0.0.0:0")?;
+    fs::create_dir("./pejovu");
     std::env::set_current_dir("./pejovu");
     let mut args = env::args();
     args.next();
