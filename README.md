@@ -20,6 +20,7 @@ try running with RUST_BACKTRACE=1 RUST_LOG=debug ./target/debug/pejovu
 or info/warn log levels
 
 # TODO
+let p: Person = serde_json::from_str(data)?
 - save peer list  between restarts to not depend on the hard coded list
 - send_peers and bump_inbounds should chose more intelligently, randomly is better than first 50, ideally a vector sorted by responsiveness and chosen somewhat ranomly with a lean to the closer hosts
 - chose random port on first run, but then stick with it between restarts, save in a config file json

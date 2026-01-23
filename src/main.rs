@@ -65,7 +65,7 @@ fn main() -> Result<(), std::io::Error> {
         let (_amt, src) = match socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
-                warn!("too quiet, asking for more peers");
+                info!("too quiet, asking for more peers");
                 for p in &peers {
                     debug!("p loop");
                     let mut message_out: Vec<Value> = Vec::new();
@@ -84,7 +84,9 @@ fn main() -> Result<(), std::io::Error> {
             }
         };
         debug!("{:?} said something", src);
-        peers.insert(src);
+        if peers.insert(src) {
+            warn!("new peer spotted {src}");
+        }
         let mut message_out: Vec<Value> = Vec::new();
         for message_in in &messages {
             debug!("message {}", message_in);
@@ -124,7 +126,9 @@ fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
     for p in message["peers"].as_array().unwrap() {
         debug!(" a peer {:?}", p);
         let sa: SocketAddr = p.as_str().unwrap().parse().unwrap();
-        peers.insert(sa);
+        if peers.insert(sa) {
+            warn!("new peer suggested {sa}");
+        }
     }
     return Null;
 }
