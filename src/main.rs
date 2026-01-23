@@ -173,6 +173,7 @@ fn receive_content(
     let block = (offset / 4096) as usize;
     if inbound_state.bitmap[block] {
         inbound_state.dups += 1;
+        info!("dup");
         return Null;
     }
     let content_bytes = general_purpose::STANDARD_NO_PAD
