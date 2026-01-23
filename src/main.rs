@@ -1,6 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
+
 use bitvec::prelude::*;
 use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value, Value::Null};
 //use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -122,6 +124,26 @@ fn send_peers(peers: &HashSet<SocketAddr>) -> Value {
         "peers":  p});
 }
 
+// how i could do this a maybe cleaner way
+#[derive(Serialize, Deserialize)]
+struct TheseArePeers {
+    message_type: String,
+    peers: Vec<String>,
+    how_to_add_new_fields_without_error: Option<String>,
+}
+fn ____receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
+    let m: TheseArePeers = serde_json::from_value(message.clone()).unwrap();
+    println!("deserrialzed {0}", m.message_type);
+    for p in m.peers {
+        debug!(" a peer {:?}", p);
+        let sa: SocketAddr = p.parse().unwrap();
+        if peers.insert(sa) {
+            warn!("new peer suggested {sa}");
+        }
+    }
+    return Null;
+}
+
 fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
     for p in message["peers"].as_array().unwrap() {
         debug!(" a peer {:?}", p);
@@ -132,6 +154,7 @@ fn receive_peers(peers: &mut HashSet<SocketAddr>, message: &Value) -> Value {
     }
     return Null;
 }
+
 
 fn send_content(message_in: &Value, inbound_states: &mut HashMap<String, InboundState>) -> Value {
     let content_id = message_in["content_id"].as_str().unwrap();
