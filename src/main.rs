@@ -188,7 +188,8 @@ fn receive_content(
     }
     if (inbound_state.next_block % 100) == 0 {
         // increase the amount of data in flight
-        let message_out = request_content_block(inbound_state);
+        let mut message_out: Vec<Value> = Vec::new();
+        message_out.push(request_content_block(inbound_state));
         let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
         socket.send_to(&message_bytes, src).ok();
     }
