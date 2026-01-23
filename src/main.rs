@@ -139,6 +139,7 @@ fn send_content(message_in: &Value, inbound_states: &mut HashMap<String, Inbound
     let file: &File;
     let file_: File;
     if inbound_states.contains_key(content_id)  && 
+    content_offset as usize +content_length < inbound_states[content_id].eof &&
             inbound_states[content_id].bitmap[ (content_offset / BLOCK_SIZE!()) as usize ] &&
                 ((content_offset % BLOCK_SIZE!()) ==0)
     {
