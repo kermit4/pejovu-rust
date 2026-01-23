@@ -72,7 +72,13 @@ fn main() -> Result<(), std::io::Error> {
                 continue;
             }
         };
-        let messages: Vec<Value> = serde_json::from_slice(&buf[0.._amt]).unwrap();
+        let messages: Vec<Value> = match serde_json::from_slice(&buf[0.._amt]) {
+            Ok(_r) => _r,
+            _ => {
+                warn!("could not deserialize an incoming message");
+                continue;
+            }
+        };
         debug!("{:?} said something", src);
         peers.insert(src);
         let mut message_out: Vec<Value> = Vec::new();
@@ -83,9 +89,7 @@ fn main() -> Result<(), std::io::Error> {
                 PLEASE_SEND_PEERS => send_peers(&peers),
                 THESE_ARE_PEERS => receive_peers(&mut peers, message_in),
                 PLEASE_SEND_CONTENT => send_content(message_in),
-                HERE_IS_CONTENT => {
-                    receive_content(message_in, &mut inbound_states, &socket, &src)
-                }
+                HERE_IS_CONTENT => receive_content(message_in, &mut inbound_states, &socket, &src),
                 _ => Null,
             };
             if reply != Null {
