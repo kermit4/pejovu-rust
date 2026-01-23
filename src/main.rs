@@ -173,7 +173,7 @@ fn receive_content(
     let block = (offset / 4096) as usize;
     if inbound_state.bitmap[block] {
         inbound_state.dups += 1;
-        info!("dup");
+        info!("dup {block}");
         return Null;
     }
     let content_bytes = general_purpose::STANDARD_NO_PAD
@@ -215,6 +215,7 @@ fn request_content_block(inbound_state: &mut InboundState) -> Value {
         }
         inbound_state.bitmap[inbound_state.next_block]
     } {}
+    debug!("requesting {0}",inbound_state.next_block);
     return json!(
         {MESSAGE_TYPE: PLEASE_SEND_CONTENT,
         "content_id":  inbound_state.content_id,
@@ -264,7 +265,7 @@ fn bump_inbounds(
     socket: &UdpSocket,
 ) -> () {
     let mut to_remove = "".to_owned();
-    for inbound_state in inbound_states.values_mut() {
+    for mut inbound_state in inbound_states.values_mut() {
         if inbound_state.last_bumped.elapsed().unwrap().as_secs() < 1 {
             continue;
         }
@@ -276,7 +277,7 @@ fn bump_inbounds(
         }
         for p in peers.iter() {
             let mut message_out: Vec<Value> = Vec::new();
-            message_out.push(request_content_block(inbound_state));
+            message_out.push(request_content_block(&mut inbound_state));
             let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
             socket.send_to(&message_bytes, p).ok();
         }
