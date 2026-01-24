@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
-use log::{debug, info, trace, warn, error};
+use log::{trace, debug, info, warn, error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 //use sha2::{Digest, Sha256};
@@ -67,7 +67,7 @@ fn main() -> Result<(), std::io::Error> {
                     let mut message_out: Vec<Message> = Vec::new();
                     message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
                     let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-                    debug!("sending message {:?}", str::from_utf8(&message_out_bytes));
+                    trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
                     socket.send_to(&message_out_bytes, p).ok();
                 }
                 continue;
@@ -124,8 +124,11 @@ fn main() -> Result<(), std::io::Error> {
             continue;
         }
         let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-        debug!("sending message {:?}", str::from_utf8(&message_out_bytes));
-        socket.send_to(&message_out_bytes, src).ok();
+        trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
+        match socket.send_to(&message_out_bytes, src) {
+            Ok(s) => debug!("sent {s}"),
+            Err(e) => warn!("failed to send {0} {e}",message_out_bytes.len()),
+                }
     }
 }
 
@@ -329,7 +332,7 @@ fn bump_inbounds(
             let mut message_out: Vec<Message> = Vec::new();
             message_out.append(&mut request_content_block(&mut inbound_state));
             let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-            debug!("sending message {:?}", str::from_utf8(&message_out_bytes));
+            trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
             socket.send_to(&message_out_bytes, p).ok();
         }
     }
