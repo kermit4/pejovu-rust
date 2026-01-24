@@ -1,9 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
-
 use bitvec::prelude::*;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value, Value::Null};
+use serde_json::{Value, Value::Null};
 //use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -21,7 +20,6 @@ use std::str;
 use std::time::{Duration, SystemTime};
 use std::vec;
 
-const MESSAGE_TYPE: &str = "message_type";
 const PLEASE_SEND_CONTENT: &str = "Please send content.";
 const THESE_ARE_PEERS: &str = "These are peers.";
 const PLEASE_SEND_PEERS: &str = "Please send peers.";
@@ -41,6 +39,11 @@ fn walk_object(name: &str, x: &Value, result: &mut Vec<String>) {
         debug!("field {:?}", field);
         walk_object(&name, field, result);
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct EmptyMessage {
+    message_type: String,
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -71,7 +74,7 @@ fn main() -> Result<(), std::io::Error> {
                 for p in &peers {
                     debug!("p loop");
                     let mut message_out: Vec<Value> = Vec::new();
-                    message_out.push(json!({MESSAGE_TYPE:PLEASE_SEND_PEERS})); // let people know im here
+                    message_out.push(serde_json::to_value(EmptyMessage{message_type:PLEASE_SEND_PEERS.to_string()}).unwrap()); // let people know im here
                     let message_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
                     socket.send_to(&message_bytes, p).ok();
                 }
@@ -92,8 +95,8 @@ fn main() -> Result<(), std::io::Error> {
         let mut message_out: Vec<Value> = Vec::new();
         for message_in in &messages {
             debug!("message {}", message_in);
-            debug!("type {}", message_in[MESSAGE_TYPE]);
-            let reply = match message_in[MESSAGE_TYPE].as_str().unwrap() {
+            let m: EmptyMessage = serde_json::from_value(message_in.clone()).unwrap();
+            let reply = match m.message_type.as_str(){
                 PLEASE_SEND_PEERS => send_peers(&peers),
                 THESE_ARE_PEERS => receive_peers(&mut peers, message_in),
                 PLEASE_SEND_CONTENT => send_content(message_in, &mut inbound_states),
