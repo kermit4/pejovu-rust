@@ -110,13 +110,6 @@ fn main() -> Result<(), std::io::Error> {
                 Message::TheseArePeers(t) => t.receive_peers(&mut peers),
                 Message::PleaseSendContent(t) => t.send_content(&mut inbound_states),
                 Message::HereIsContent(t) => t.receive_content(&mut inbound_states),
-                _ => {
-                    warn!(
-                        "unknown message type {:?}",
-                        serde_json::to_value(message_in_enum)
-                    );
-                    vec![]
-                }
             };
             message_out.append(&mut reply)
         }
@@ -361,6 +354,4 @@ enum Message {
     TheseArePeers(TheseArePeers),
     PleaseSendContent(PleaseSendContent),
     HereIsContent(HereIsContent),
-    #[serde(other)]
-    Unknown,
 }
