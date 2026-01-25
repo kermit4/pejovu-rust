@@ -43,8 +43,8 @@ fn main() -> Result<(), std::io::Error> {
     peers.insert("148.71.89.128:24254".parse().unwrap());
     peers.insert("159.69.54.127:24254".parse().unwrap());
     let socket = UdpSocket::bind("0.0.0.0:24254")?;
-    fs::create_dir("./cjpp").ok();
-    std::env::set_current_dir("./cjpp").unwrap();
+    fs::create_dir("./cjp2p").ok();
+    std::env::set_current_dir("./cjp2p").unwrap();
     let mut args = env::args();
     args.next();
     let mut inbound_states: HashMap<String, InboundState> = HashMap::new();
