@@ -24,7 +24,7 @@ or info/warn log levels
 - chose random port on first run, but then stick with it between restarts, save in a config file json
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere
 - some way to not be used as a DDOS as people can spoof their IPs in a request for peers or contont
-- streaming
+- streaming (files that grow)
 -- prioritize earlier packets to improve streaming 
 
 maybe replies just include request and that it is a reply, so cookies and all data are there even if not used by replier

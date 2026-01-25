@@ -248,9 +248,11 @@ impl HereIsContent {
         inbound_state.blocks_complete += 1;
         inbound_state.bitmap.set(block, true);
         let mut reply = request_content_block(inbound_state);
+        inbound_state.next_block += 1;
         if (inbound_state.blocks_complete % 300) == 0 {
             debug!("increasing window for {0} ", inbound_state.content_id);
             reply.append(&mut request_content_block(inbound_state));
+            inbound_state.next_block += 1;
         }
         return reply;
     }
@@ -261,7 +263,6 @@ fn request_content_block(inbound_state: &mut InboundState) -> Vec<Message> {
         return vec![];
     }
     while {
-        inbound_state.next_block += 1;
         if inbound_state.next_block * BLOCK_SIZE!() >= inbound_state.eof {
             info!("almost done with {0}", inbound_state.content_id);
             info!("pending blocks: ");
@@ -273,7 +274,9 @@ fn request_content_block(inbound_state: &mut InboundState) -> Vec<Message> {
             inbound_state.next_block = 0;
         }
         inbound_state.bitmap[inbound_state.next_block as usize]
-    } {}
+    } {
+        inbound_state.next_block += 1;
+    }
     inbound_state.blocks_requested += 1;
     return vec![Message::PleaseSendContent(PleaseSendContent {
         content_id: inbound_state.content_id.to_owned(),
@@ -336,9 +339,7 @@ fn bump_inbounds(
         }
         for p in peers {
             let mut message_out: Vec<Message> = Vec::new();
-            let rewind = inbound_state.next_block;
             message_out.append(&mut request_content_block(&mut inbound_state));
-            inbound_state.next_block = rewind; // until its smarter about who its asking next, dont assume we'll get a reply, otherwise it just leaves holes
 
             let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
             trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
