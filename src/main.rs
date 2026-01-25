@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
-use log::{trace, debug, info, warn, error};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 //use sha2::{Digest, Sha256};
@@ -127,8 +127,8 @@ fn main() -> Result<(), std::io::Error> {
         trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
         match socket.send_to(&message_out_bytes, src) {
             Ok(s) => debug!("sent {s}"),
-            Err(e) => warn!("failed to send {0} {e}",message_out_bytes.len()),
-                }
+            Err(e) => warn!("failed to send {0} {e}", message_out_bytes.len()),
+        }
     }
 }
 
@@ -251,7 +251,7 @@ impl HereIsContent {
             inbound_state.next_block = 0;
         }
         let mut reply = request_content_block(inbound_state);
-        if (inbound_state.blocks_complete % 500) == 0 {
+        if (inbound_state.blocks_complete % 300) == 0 {
             info!("increasing window");
             reply.append(&mut request_content_block(inbound_state));
         }
@@ -271,6 +271,7 @@ fn request_content_block(inbound_state: &mut InboundState) -> Vec<Message> {
         inbound_state.bitmap[inbound_state.next_block as usize]
     } {}
     debug!("requesting {0}", inbound_state.next_block);
+    inbound_state.blocks_requested += 1;
     return vec![Message::PleaseSendContent(PleaseSendContent {
         content_id: inbound_state.content_id.to_owned(),
         content_offset: inbound_state.next_block * BLOCK_SIZE!(),
@@ -293,6 +294,7 @@ fn new_inbound_state(inbound_states: &mut HashMap<String, InboundState>, content
         content_id: content_id.to_string(),
         eof: 1,
         blocks_complete: 0,
+        blocks_requested: 0,
         last_bumped: SystemTime::now() - Duration::from_secs(5),
         dups: 0,
     };
@@ -307,6 +309,7 @@ struct InboundState {
     content_id: String,
     eof: u64,
     blocks_complete: u64,
+    blocks_requested: u64,
     last_bumped: SystemTime,
     dups: u64,
     // last host
@@ -337,9 +340,13 @@ fn bump_inbounds(
         }
     }
     if to_remove != "" {
-        println!(
-            "{to_remove} complete {0} dups of {1} blocks",
-            inbound_states[&to_remove].dups, inbound_states[&to_remove].blocks_complete
+        let i = &inbound_states[&to_remove];
+        println!("{to_remove} complete ");
+        info!(
+            "{to_remove} complete {0} dups of {1} blocks {2}% loss",
+            i.dups,
+            i.blocks_complete,
+            1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)
         );
         let path = "./incoming/".to_owned() + &to_remove;
         let new_path = "./".to_owned() + &to_remove;

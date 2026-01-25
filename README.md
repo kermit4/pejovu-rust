@@ -32,4 +32,10 @@ cookie as its own message.  be sure to call part timestamp too  so people dont c
 
 timer to say hey and ask whatsup
 
+trim peers last seen or rtt? or both? and track unverified
+ping new.   
 
+randomize peer suggestions
+, share more often than just at inactivity.   
+
+remember to talk like people.        
