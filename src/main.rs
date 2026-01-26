@@ -55,24 +55,18 @@ fn main() -> Result<(), std::io::Error> {
         new_inbound_state(&mut inbound_states, v.as_str());
     }
     socket.set_read_timeout(Some(Duration::new(1, 0)))?;
+    let mut last_maintenance = UNIX_EPOCH;
     loop {
         let mut buf = [0; 0x10000];
         socket.set_read_timeout(Some(Duration::new(1, 0)))?;
-        bump_inbounds(&mut inbound_states, &mut peer_map, &socket);
+        if last_maintenance + Duration::from_secs(1) < SystemTime::now() {
+            last_maintenance = SystemTime::now();
+            maintenance(&mut inbound_states, &mut peer_map, &socket);
+        }
         let (message_len, src) = match socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
-                debug!("so quiet, looking for more peers");
-                for (sa, pi) in peer_map.iter_mut() {
-                    let mut message_out: Vec<Message> = Vec::new();
-                    message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
-                    let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-                    trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
-                    socket.send_to(&message_out_bytes, sa).ok();
-                    *pi = PeerInfo {
-                        last_seen: UNIX_EPOCH,
-                    };
-                }
+                warn!("no one is talking!");
                 continue;
             }
         };
@@ -246,45 +240,56 @@ impl PleaseSendContent {
 
 impl HereIsContent {
     fn receive_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
-        let block_number = self.content_offset / BLOCK_SIZE!();
+        let block_number = (self.content_offset / BLOCK_SIZE!()) as usize;
         if !inbound_states.contains_key(&self.content_id) {
             return vec![];
         }
-        let inbound_state = inbound_states.get_mut(&self.content_id).unwrap();
+        let i = inbound_states.get_mut(&self.content_id).unwrap();
         debug!("received  {:?} block {:?}", self.content_id, block_number);
-        let block = (block_number) as usize;
-        if self.content_eof > inbound_state.eof {
-            inbound_state.eof = self.content_eof;
+        if self.content_eof > i.eof {
+            i.eof = self.content_eof;
         }
-        let blocks = (inbound_state.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
-        inbound_state.bitmap.resize(blocks as usize, false);
-        if inbound_state.bitmap[block] {
-            inbound_state.dups += 1;
-            debug!("dup {block}");
+        let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
+        i.bitmap.resize(blocks as usize, false);
+        if i.blocks_complete * BLOCK_SIZE!() >= i.eof {
+            println!("{0} complete ", i.content_id);
+            info!(
+                "{0} complete {1} dups of {2} blocks {3}% loss",
+                i.content_id,
+                i.dups,
+                i.blocks_complete,
+                1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)
+            );
+            let path = "./incoming/".to_owned() + &i.content_id;
+            let new_path = "./".to_owned() + &i.content_id;
+            fs::rename(path, new_path).unwrap();
+            inbound_states.remove(&self.content_id);
+            return vec![];
+        };
+
+        if i.bitmap[block_number] {
+            i.dups += 1;
+            debug!("dup {block_number}");
             return vec![];
         }
         let content_bytes = general_purpose::STANDARD_NO_PAD
             .decode(&self.content_b64)
             .unwrap();
-        inbound_state
-            .file
+        i.file
             .write_at(&content_bytes, self.content_offset)
             .unwrap();
-        inbound_state.blocks_complete += 1;
-        inbound_state.bitmap.set(block, true);
-        let mut reply = request_content_block(inbound_state);
-        debug!(
-            "request  {:?} offset {:?}",
-            inbound_state.content_id, inbound_state.next_block
-        );
-        inbound_state.next_block += 1;
-        if (inbound_state.blocks_complete % 100) == 0 {
-            reply.append(&mut request_content_block(inbound_state));
+        i.blocks_complete += 1;
+        i.bitmap.set(block_number, true);
+        let mut reply = request_content_block(i);
+        debug!("request  {:?} offset {:?}", i.content_id, i.next_block);
+        i.next_block += 1;
+        if (i.blocks_complete % 100) == 0 {
+            reply.append(&mut request_content_block(i));
             debug!(
                 "request  {:?} offset {:?} EXTRA",
-                inbound_state.content_id, inbound_state.next_block
+                i.content_id, i.next_block
             );
-            inbound_state.next_block += 1;
+            i.next_block += 1;
         }
         return reply;
     }
@@ -333,7 +338,6 @@ fn new_inbound_state(inbound_states: &mut HashMap<String, InboundState>, content
         eof: 1,
         blocks_complete: 0,
         blocks_requested: 0,
-        last_bumped: SystemTime::now() - Duration::from_secs(1),
         dups: 0,
     };
     inbound_state.bitmap.resize(1, false);
@@ -348,50 +352,38 @@ struct InboundState {
     eof: u64,
     blocks_complete: u64,
     blocks_requested: u64,
-    last_bumped: SystemTime,
     dups: u64,
     // last host
 }
 
-fn bump_inbounds(
+fn maintenance(
     inbound_states: &mut HashMap<String, InboundState>,
     peer_map: &mut HashMap<SocketAddr, PeerInfo>,
     socket: &UdpSocket,
 ) -> () {
-    let mut to_remove = "".to_owned();
-    for mut inbound_state in inbound_states.values_mut() {
-        if inbound_state.last_bumped.elapsed().unwrap().as_secs() < 1 {
-            continue;
-        }
-        inbound_state.last_bumped = SystemTime::now();
-        if inbound_state.blocks_complete * BLOCK_SIZE!() >= inbound_state.eof {
-            to_remove = inbound_state.content_id.as_str().to_owned();
-            continue;
-        }
+    for (sa, pi) in peer_map.iter_mut() {
+        // TODO maybe not ask everyone every second huh?
+        let mut message_out: Vec<Message> = Vec::new();
+        message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
+        let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
+        trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
+        socket.send_to(&message_out_bytes, sa).ok();
+        *pi = PeerInfo {
+            last_seen: UNIX_EPOCH,
+        };
+    }
+
+    for (_, i) in inbound_states.iter_mut() {
         for (sa, _) in peer_map.iter_mut() {
             let mut message_out: Vec<Message> = Vec::new();
-            message_out.append(&mut request_content_block(&mut inbound_state));
+            message_out.append(&mut request_content_block(i));
             let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
             trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
             debug!("sending {:?} bump to {sa}", message_out.len());
             socket.send_to(&message_out_bytes, sa).ok();
         }
-        inbound_state.next_block += 1;
+        i.next_block += 1;
     }
-    if to_remove != "" {
-        let i = &inbound_states[&to_remove];
-        println!("{to_remove} complete ");
-        info!(
-            "{to_remove} complete {0} dups of {1} blocks {2}% loss",
-            i.dups,
-            i.blocks_complete,
-            1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)
-        );
-        let path = "./incoming/".to_owned() + &to_remove;
-        let new_path = "./".to_owned() + &to_remove;
-        fs::rename(path, new_path).unwrap();
-        inbound_states.remove(&to_remove);
-    };
 }
 
 #[derive(Serialize, Deserialize)]
