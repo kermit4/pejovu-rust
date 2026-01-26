@@ -76,8 +76,7 @@ fn main() -> Result<(), std::io::Error> {
             _ => {
                 error!(
                     "could not deserialize an incoming message {:?}",
-                    message_in_bytes
-                );
+                    String::from_utf8_lossy(message_in_bytes));
                 continue;
             }
         };
