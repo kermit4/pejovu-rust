@@ -260,6 +260,11 @@ impl PleaseSendContent {
         {
             file = &inbound_states[&self.content_id].file;
         } else {
+            // if we're going to get it from ourselves, this is not the way to do it.  If we get here its probably for testing.
+            if inbound_states.contains_key(&self.content_id) {
+                return vec![];
+            }
+
             match File::open(&self.content_id) {
                 Ok(_r) => {
                     file_ = _r;
