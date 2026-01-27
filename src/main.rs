@@ -306,12 +306,12 @@ impl HereIsContent {
         i.bitmap.resize(blocks as usize, false);
         if i.blocks_complete * BLOCK_SIZE!() >= i.eof {
             println!("{0} complete ", i.content_id);
-            info!(
+            warn!(
                 "{0} complete {1} dups of {2} blocks {3}% loss",
                 i.content_id,
                 i.dups,
                 i.blocks_complete,
-                1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)
+                100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64))
             );
             let path = "./incoming/".to_owned() + &i.content_id;
             let new_path = "./".to_owned() + &i.content_id;
@@ -333,18 +333,21 @@ impl HereIsContent {
             .unwrap();
         i.blocks_complete += 1;
         i.bitmap.set(block_number, true);
-        let mut reply = request_content_block(i);
-        debug!("request  {:?} offset {:?}", i.content_id, i.next_block);
+        let mut message_out = request_content_block(i);
+        debug!("requesting  {:?} offset {:?} ", i.content_id, i.next_block);
         i.next_block += 1;
         if (i.blocks_complete % 100) == 0 {
-            reply.append(&mut request_content_block(i));
+            message_out.append(&mut request_content_block(i));
             debug!(
-                "request  {:?} offset {:?} EXTRA",
+                "requesting  {:?} offset {:?} ACCELERATOR",
                 i.content_id, i.next_block
             );
             i.next_block += 1;
+            message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
+                sent_at: UNIX_EPOCH.elapsed().unwrap().as_secs_f64(),
+            }));
         }
-        return reply;
+        return message_out;
     }
 }
 //
@@ -440,11 +443,14 @@ fn maintenance(
         for sa in best_peers {
             let mut message_out: Vec<Message> = Vec::new();
             message_out.append(&mut request_content_block(i));
+            message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
+                sent_at: UNIX_EPOCH.elapsed().unwrap().as_secs_f64(),
+            }));
             let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
             trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
             debug!(
-                "sending {:?} unpmompted PleaseSendContent to {sa}",
-                message_out.len()
+                "requesting  {:?} offset {:?} EXTRA from {:?}",
+                i.content_id, i.next_block, sa
             );
             socket.send_to(&message_out_bytes, sa).ok();
         }
