@@ -111,7 +111,7 @@ fn main() -> Result<(), std::io::Error> {
         };
         trace!(
             "incoming message {:?} from {src}",
-            str::from_utf8(message_in_bytes)
+            String::from_utf8_lossy(message_in_bytes)
         );
         if ps
             .peer_map
@@ -125,23 +125,35 @@ fn main() -> Result<(), std::io::Error> {
         {
             warn!("new peer spotted {src}");
         }
-        let mut message_out: Vec<Message> = Vec::new();
+        let mut message_out: Vec<serde_json::Value> = Vec::new();
         debug!("received {:?} messages from {src}", messages.len());
         for message_in in messages {
-            let message_in_enum: Message = match serde_json::from_value(message_in.clone()) {
-                Ok(_r) => _r,
-                _ => {
-                    error!("could not deserialize an incoming message {:?}", message_in);
-                    continue;
+            if (message_in["PleaseReturnThisMessage"]) != Value::Null {
+                // this isn't checked below
+                // because we don't know it
+                // structure so it may error
+                message_out.push(
+                    serde_json::json!({"ReturnedMessage":message_in["PleaseReturnThisMessage"]}),
+                );
+            } else {
+                let message_in_enum: Message = match serde_json::from_value(message_in.clone()) {
+                    Ok(_r) => _r,
+                    _ => {
+                        error!("could not deserialize an incoming message {:?}", message_in);
+                        continue;
+                    }
+                };
+                let reply = match message_in_enum {
+                    Message::PleaseSendPeers(t) => t.send_peers(&ps),
+                    Message::TheseArePeers(t) => t.receive_peers(&mut ps),
+                    Message::PleaseSendContent(t) => t.send_content(&mut inbound_states),
+                    Message::HereIsContent(t) => t.receive_content(&mut inbound_states),
+                    _ => vec![],
+                };
+                for m in reply {
+                    message_out.push(serde_json::to_value(m).unwrap());
                 }
-            };
-            let mut reply = match message_in_enum {
-                Message::PleaseSendPeers(t) => t.send_peers(&ps),
-                Message::TheseArePeers(t) => t.receive_peers(&mut ps),
-                Message::PleaseSendContent(t) => t.send_content(&mut inbound_states),
-                Message::HereIsContent(t) => t.receive_content(&mut inbound_states),
-            };
-            message_out.append(&mut reply);
+            }
         }
         if message_out.len() == 0 {
             continue;
@@ -150,7 +162,7 @@ fn main() -> Result<(), std::io::Error> {
         debug!("sending {:?} messages to {src}", message_out.len());
         trace!(
             "sending message {:?} to {src}",
-            str::from_utf8(&message_out_bytes)
+            String::from_utf8_lossy(&message_out_bytes)
         );
         match socket.send_to(&message_out_bytes, src) {
             Ok(s) => trace!("sent {s}"),
@@ -393,12 +405,13 @@ fn maintenance(
     let now = SystemTime::now();
     ps.peer_vec = ps.peer_map.clone().into_iter().collect();
     ps.peer_vec
-        .sort_by_key(|(_, p)| now.duration_since(p.last_seen).unwrap());
+        .sort_unstable_by_key(|(_, p)| now.duration_since(p.last_seen).unwrap());
     let best_peers = &ps.best_peers();
 
     for sa in best_peers {
         let mut message_out: Vec<Message> = Vec::new();
         message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
+                                                                        //        message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {sent_at: UNIX_EPOCH.elapsed().as_secs_f64()})); // let people know im here
         let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
 
         socket.send_to(&message_out_bytes, sa).ok();
@@ -406,8 +419,6 @@ fn maintenance(
 
     for (_, i) in inbound_states.iter_mut() {
         for sa in best_peers {
-            // TODO do not spam *everyone*.  use same peer selecion
-            // algorithm until we do know better
             let mut message_out: Vec<Message> = Vec::new();
             message_out.append(&mut request_content_block(i));
             let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
@@ -423,9 +434,30 @@ fn maintenance(
 }
 
 #[derive(Serialize, Deserialize)]
+struct PleaseReturnThisMessage {
+    sent_at: Option<i64>,
+}
+//
+//impl PleaseReturnThisMessage {
+//    fn receive_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
+//        return
+//    }
+//}
+//#[derive(Serialize, Deserialize)]
+//struct ReturnedMessage {
+//    sent_at: SystemTime;
+//}
+//impl ReturnedMessage {
+//    fn receive_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
+//        }
+//}
+//
+#[derive(Serialize, Deserialize)]
 enum Message {
     PleaseSendPeers(PleaseSendPeers),
     TheseArePeers(TheseArePeers),
     PleaseSendContent(PleaseSendContent),
     HereIsContent(HereIsContent),
+    PleaseReturnThisMessage(PleaseReturnThisMessage),
+    //  ReturnedMessage(ReturnedMessage),
 }
