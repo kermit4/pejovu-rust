@@ -98,7 +98,7 @@ fn main() -> Result<(), std::io::Error> {
         let (message_len, src) = match socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
-                warn!("no one is talking!");
+                debug!("no messages for a second");
                 continue;
             }
         };
@@ -411,8 +411,13 @@ fn maintenance(
 ) -> () {
     let now = SystemTime::now();
     ps.peer_vec = ps.peer_map.clone().into_iter().collect();
-    ps.peer_vec
-        .sort_unstable_by_key(|(_, p)| now.duration_since(p.last_seen).unwrap());
+    ps.peer_vec.sort_unstable_by(|a, b| {
+        (now.duration_since(a.1.last_seen).unwrap().as_secs_f64() * a.1.latency.as_secs_f64())
+            .total_cmp(
+                &(now.duration_since(b.1.last_seen).unwrap().as_secs_f64()
+                    * b.1.latency.as_secs_f64()),
+            )
+    });
     let best_peers = &ps.best_peers();
 
     for sa in best_peers {
@@ -458,7 +463,7 @@ impl ReturnedMessage {
                 peer.latency = (UNIX_EPOCH + Duration::from_secs_f64(self.sent_at))
                     .elapsed()
                     .unwrap();
-                warn!("measured {0} at {1}", src, peer.latency.as_secs_f64())
+                info!("measured {0} at {1}", src, peer.latency.as_secs_f64())
             }
             _ => {
                 ps.peer_map.insert(
