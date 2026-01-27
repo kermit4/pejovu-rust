@@ -207,18 +207,15 @@ impl TheseArePeers {
         debug!("received  {:?} peers", self.peers.len());
         for p in &self.peers {
             let sa: SocketAddr = *p;
-            if ps
-                .peer_map
-                .insert(
+            if !ps.peer_map.contains_key(&sa) {
+                warn!("new peer suggested {sa}");
+                ps.peer_map.insert(
                     sa,
                     PeerInfo {
                         last_seen: UNIX_EPOCH,
                         latency: Duration::new(1, 0),
                     },
-                )
-                .is_none()
-            {
-                warn!("new peer suggested {sa}");
+                );
             }
         }
         return vec![];
@@ -472,16 +469,7 @@ impl ReturnedMessage {
                     .unwrap();
                 info!("measured {0} at {1}", src, peer.latency.as_secs_f64())
             }
-            _ => {
-                ps.peer_map.insert(
-                    src,
-                    PeerInfo {
-                        last_seen: SystemTime::now(),
-                        latency: Duration::new(1, 0),
-                    },
-                );
-                warn!("new peer spotted {src}");
-            }
+            _ => (),
         };
         vec![]
     }
