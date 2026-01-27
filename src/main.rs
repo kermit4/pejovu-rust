@@ -4,6 +4,7 @@ use chrono::{Timelike, Utc};
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::cmp;
 use std::io::Write;
 //use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -40,16 +41,59 @@ struct PeerState {
     socket: UdpSocket,
 }
 impl PeerState {
-    fn best_peers(&self, how_many: i32) -> Vec<SocketAddr> {
+    fn sort(&mut self) -> () {
+        let now = SystemTime::now();
+        self.peer_vec = self.peer_map.clone().into_iter().collect();
+        self.peer_vec.sort_unstable_by(|a, b| {
+            (now.duration_since(a.1.when_last_seen)
+                .unwrap()
+                .as_secs_f64()
+                * a.1.delay.as_secs_f64())
+            .total_cmp(
+                &(now
+                    .duration_since(b.1.when_last_seen)
+                    .unwrap()
+                    .as_secs_f64()
+                    * b.1.delay.as_secs_f64()),
+            )
+        });
+    }
+
+    fn load_peers(&mut self) -> () {
+        let file = OpenOptions::new().read(true).open("peers.json");
+        if file.as_ref().is_ok() && file.as_ref().unwrap().metadata().unwrap().len() > 0 {
+            let json: Vec<(SocketAddr, PeerInfo)> =
+                serde_json::from_reader(&file.unwrap()).unwrap();
+            self.peer_map.extend(json);
+        }
+    }
+    fn save_peers(&self) -> () {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("peers.json")
+            .unwrap()
+            .write_all(
+                &serde_json::to_vec_pretty(&self.peer_vec[..cmp::min(self.peer_vec.len(), 99)])
+                    .unwrap(),
+            )
+            .ok();
+    }
+
+    fn best_peers(&self, how_many: i32, quality: i32) -> Vec<SocketAddr> {
         let mut rng = rand::thread_rng();
         let result: &mut Vec<SocketAddr> = &mut vec![];
         for _ in 0..how_many {
-            let i: usize =
-                ((rng.gen_range(0.0..1.0) as f64).powi(3) * (self.peer_vec.len() as f64)) as usize;
+            let i: usize = ((rng.gen_range(0.0..1.0) as f64).powi(quality)
+                * (self.peer_vec.len() as f64)) as usize;
+            if i >= self.peer_vec.len() {
+                continue;
+            }
             let p = &self.peer_vec[i];
             result.push(p.0);
             info!(
-                "best peer {0} {1} {2} {3}",
+                "best peer(q:{quality}) {0} {1} {2} {3}",
                 i,
                 p.0,
                 p.1.when_last_seen.elapsed().unwrap().as_secs_f64(),
@@ -82,6 +126,7 @@ fn main() -> Result<(), std::io::Error> {
     );
     fs::create_dir("./cjp2p").ok();
     std::env::set_current_dir("./cjp2p").unwrap();
+    ps.load_peers();
     let mut args = env::args();
     args.next();
     let mut inbound_states: HashMap<String, InboundState> = HashMap::new();
@@ -189,7 +234,7 @@ struct TheseArePeers {
 struct PleaseSendPeers {}
 impl PleaseSendPeers {
     fn send_peers(&self, ps: &PeerState) -> Vec<Message> {
-        let p = ps.best_peers(50);
+        let p = ps.best_peers(50, 6);
         trace!(
             "sending {:?}/{:?} peers {:?}",
             p.len(),
@@ -412,30 +457,14 @@ struct InboundState {
 }
 
 fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
-    let now = SystemTime::now();
-    if Utc::now().second() + (Utc::now().minute() % 5) == 0 {
-        OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(true)
-            .open("config.json")
-            .unwrap()
-            .write_all(&serde_json::to_vec(&ps.peer_map).unwrap())
-            .ok();
-        //serde_json
+    ps.sort();
+    //if Utc::now().second() + (Utc::now().minute() % 5) == 0 {
+    if Utc::now().second() % 5 == 0 {
+        // for testing
+        ps.save_peers();
     }
-    ps.peer_vec = ps.peer_map.clone().into_iter().collect();
-    ps.peer_vec.sort_unstable_by(|a, b| {
-        (now.duration_since(a.1.when_last_seen).unwrap().as_secs_f64() * a.1.delay.as_secs_f64())
-            .total_cmp(
-                &(now.duration_since(b.1.when_last_seen).unwrap().as_secs_f64()
-                    * b.1.delay.as_secs_f64()),
-            )
-    });
-    let best_peers = &ps.best_peers(10);
 
-    for sa in best_peers {
+    for sa in ps.best_peers(10, 3) {
         let mut message_out: Vec<Message> = Vec::new();
         message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
         message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
@@ -447,7 +476,7 @@ fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut Peer
     }
 
     for (_, i) in inbound_states.iter_mut() {
-        for sa in best_peers {
+        for sa in ps.best_peers(50, 6) {
             let mut message_out: Vec<Message> = Vec::new();
             message_out.append(&mut request_content_block(i));
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
