@@ -30,6 +30,7 @@ macro_rules! BLOCK_SIZE {
 #[derive(Clone)]
 struct PeerInfo {
     last_seen: SystemTime,
+    latency: Duration,
 }
 struct PeerState {
     peer_map: HashMap<SocketAddr, PeerInfo>,
@@ -45,10 +46,11 @@ impl PeerState {
             let p = &self.peer_vec[i];
             result.push(p.0);
             info!(
-                "best peer {0} {1} {2}",
+                "best peer {0} {1} {2} {3}",
                 i,
                 p.0,
-                p.1.last_seen.elapsed().unwrap().as_secs_f64()
+                p.1.last_seen.elapsed().unwrap().as_secs_f64(),
+                p.1.latency.as_secs_f64()
             );
         }
         result.clone()
@@ -64,12 +66,14 @@ fn main() -> Result<(), std::io::Error> {
         "148.71.89.128:24254".parse().unwrap(),
         PeerInfo {
             last_seen: UNIX_EPOCH,
+            latency: Duration::new(1, 0),
         },
     );
     ps.peer_map.insert(
         "159.69.54.127:24254".parse().unwrap(),
         PeerInfo {
             last_seen: UNIX_EPOCH,
+            latency: Duration::new(1, 0),
         },
     );
     let socket = UdpSocket::bind("0.0.0.0:24254")?;
@@ -113,18 +117,19 @@ fn main() -> Result<(), std::io::Error> {
             "incoming message {:?} from {src}",
             String::from_utf8_lossy(message_in_bytes)
         );
-        if ps
-            .peer_map
-            .insert(
-                src,
-                PeerInfo {
-                    last_seen: SystemTime::now(),
-                },
-            )
-            .is_none()
-        {
-            warn!("new peer spotted {src}");
-        }
+        match ps.peer_map.get_mut(&src) {
+            Some(peer) => peer.last_seen = SystemTime::now(),
+            _ => {
+                ps.peer_map.insert(
+                    src,
+                    PeerInfo {
+                        last_seen: SystemTime::now(),
+                        latency: Duration::new(1, 0),
+                    },
+                );
+                warn!("new peer spotted {src}");
+            }
+        };
         let mut message_out: Vec<serde_json::Value> = Vec::new();
         debug!("received {:?} messages from {src}", messages.len());
         for message_in in messages {
@@ -148,6 +153,7 @@ fn main() -> Result<(), std::io::Error> {
                     Message::TheseArePeers(t) => t.receive_peers(&mut ps),
                     Message::PleaseSendContent(t) => t.send_content(&mut inbound_states),
                     Message::HereIsContent(t) => t.receive_content(&mut inbound_states),
+                    Message::ReturnedMessage(t) => t.update_time(&mut ps, src),
                     _ => vec![],
                 };
                 for m in reply {
@@ -207,6 +213,7 @@ impl TheseArePeers {
                     sa,
                     PeerInfo {
                         last_seen: UNIX_EPOCH,
+                        latency: Duration::new(1, 0),
                     },
                 )
                 .is_none()
@@ -411,7 +418,9 @@ fn maintenance(
     for sa in best_peers {
         let mut message_out: Vec<Message> = Vec::new();
         message_out.push(Message::PleaseSendPeers(PleaseSendPeers {})); // let people know im here
-                                                                        //        message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {sent_at: UNIX_EPOCH.elapsed().as_secs_f64()})); // let people know im here
+        message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
+            sent_at: UNIX_EPOCH.elapsed().unwrap().as_secs_f64(),
+        }));
         let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
 
         socket.send_to(&message_out_bytes, sa).ok();
@@ -435,23 +444,37 @@ fn maintenance(
 
 #[derive(Serialize, Deserialize)]
 struct PleaseReturnThisMessage {
-    sent_at: Option<i64>,
+    sent_at: f64,
 }
-//
-//impl PleaseReturnThisMessage {
-//    fn receive_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
-//        return
-//    }
-//}
-//#[derive(Serialize, Deserialize)]
-//struct ReturnedMessage {
-//    sent_at: SystemTime;
-//}
-//impl ReturnedMessage {
-//    fn receive_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
-//        }
-//}
-//
+
+#[derive(Serialize, Deserialize)]
+struct ReturnedMessage {
+    sent_at: f64,
+}
+impl ReturnedMessage {
+    fn update_time(&self, ps: &mut PeerState, src: SocketAddr) -> Vec<Message> {
+        match ps.peer_map.get_mut(&src) {
+            Some(peer) => {
+                peer.latency = (UNIX_EPOCH + Duration::from_secs_f64(self.sent_at))
+                    .elapsed()
+                    .unwrap();
+                warn!("measured {0} at {1}", src, peer.latency as f64)
+            }
+            _ => {
+                ps.peer_map.insert(
+                    src,
+                    PeerInfo {
+                        last_seen: SystemTime::now(),
+                        latency: Duration::new(1, 0),
+                    },
+                );
+                warn!("new peer spotted {src}");
+            }
+        };
+        vec![]
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 enum Message {
     PleaseSendPeers(PleaseSendPeers),
@@ -459,5 +482,5 @@ enum Message {
     PleaseSendContent(PleaseSendContent),
     HereIsContent(HereIsContent),
     PleaseReturnThisMessage(PleaseReturnThisMessage),
-    //  ReturnedMessage(ReturnedMessage),
+    ReturnedMessage(ReturnedMessage),
 }
