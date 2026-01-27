@@ -35,12 +35,13 @@ struct PeerInfo {
 struct PeerState {
     peer_map: HashMap<SocketAddr, PeerInfo>,
     peer_vec: Vec<(SocketAddr, PeerInfo)>,
+    socket: UdpSocket,
 }
 impl PeerState {
-    fn best_peers(&self) -> Vec<SocketAddr> {
+    fn best_peers(&self, how_many: i32) -> Vec<SocketAddr> {
         let mut rng = rand::thread_rng();
         let result: &mut Vec<SocketAddr> = &mut vec![];
-        for _ in 0..10 {
+        for _ in 0..how_many {
             let i: usize =
                 ((rng.gen_range(0.0..1.0) as f64).powi(3) * (self.peer_vec.len() as f64)) as usize;
             let p = &self.peer_vec[i];
@@ -61,6 +62,7 @@ fn main() -> Result<(), std::io::Error> {
     let mut ps: PeerState = PeerState {
         peer_map: HashMap::new(),
         peer_vec: Vec::new(),
+        socket: UdpSocket::bind("0.0.0.0:24254")?,
     };
     ps.peer_map.insert(
         "148.71.89.128:24254".parse().unwrap(),
@@ -76,7 +78,6 @@ fn main() -> Result<(), std::io::Error> {
             latency: Duration::new(1, 0),
         },
     );
-    let socket = UdpSocket::bind("0.0.0.0:24254")?;
     fs::create_dir("./cjp2p").ok();
     std::env::set_current_dir("./cjp2p").unwrap();
     let mut args = env::args();
@@ -86,16 +87,15 @@ fn main() -> Result<(), std::io::Error> {
         info!("queing inbound file {:?}", v);
         new_inbound_state(&mut inbound_states, v.as_str());
     }
-    socket.set_read_timeout(Some(Duration::new(1, 0)))?;
+    ps.socket.set_read_timeout(Some(Duration::new(1, 0)))?;
     let mut last_maintenance = UNIX_EPOCH;
     loop {
         if last_maintenance.elapsed().unwrap() > Duration::from_secs(1) {
             last_maintenance = SystemTime::now();
-            maintenance(&mut inbound_states, &mut ps, &socket);
+            maintenance(&mut inbound_states, &mut ps);
         }
         let mut buf = [0; 0x10000];
-        socket.set_read_timeout(Some(Duration::new(1, 0)))?;
-        let (message_len, src) = match socket.recv_from(&mut buf) {
+        let (message_len, src) = match ps.socket.recv_from(&mut buf) {
             Ok(_r) => _r,
             Err(_e) => {
                 debug!("no messages for a second");
@@ -170,7 +170,7 @@ fn main() -> Result<(), std::io::Error> {
             "sending message {:?} to {src}",
             String::from_utf8_lossy(&message_out_bytes)
         );
-        match socket.send_to(&message_out_bytes, src) {
+        match ps.socket.send_to(&message_out_bytes, src) {
             Ok(s) => trace!("sent {s}"),
             Err(e) => warn!("failed to send {0} {e}", message_out_bytes.len()),
         }
@@ -187,7 +187,7 @@ struct TheseArePeers {
 struct PleaseSendPeers {}
 impl PleaseSendPeers {
     fn send_peers(&self, ps: &PeerState) -> Vec<Message> {
-        let p = ps.best_peers();
+        let p = ps.best_peers(50);
         trace!(
             "sending {:?}/{:?} peers {:?}",
             p.len(),
@@ -412,11 +412,7 @@ struct InboundState {
     // last host
 }
 
-fn maintenance(
-    inbound_states: &mut HashMap<String, InboundState>,
-    ps: &mut PeerState,
-    socket: &UdpSocket,
-) -> () {
+fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
     let now = SystemTime::now();
     ps.peer_vec = ps.peer_map.clone().into_iter().collect();
     ps.peer_vec.sort_unstable_by(|a, b| {
@@ -426,7 +422,7 @@ fn maintenance(
                     * b.1.latency.as_secs_f64()),
             )
     });
-    let best_peers = &ps.best_peers();
+    let best_peers = &ps.best_peers(10);
 
     for sa in best_peers {
         let mut message_out: Vec<Message> = Vec::new();
@@ -436,7 +432,7 @@ fn maintenance(
         }));
         let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
 
-        socket.send_to(&message_out_bytes, sa).ok();
+        ps.socket.send_to(&message_out_bytes, sa).ok();
     }
 
     for (_, i) in inbound_states.iter_mut() {
@@ -452,7 +448,7 @@ fn maintenance(
                 "requesting  {:?} offset {:?} EXTRA from {:?}",
                 i.content_id, i.next_block, sa
             );
-            socket.send_to(&message_out_bytes, sa).ok();
+            ps.socket.send_to(&message_out_bytes, sa).ok();
         }
         i.next_block += 1;
     }
