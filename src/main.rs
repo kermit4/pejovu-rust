@@ -199,9 +199,9 @@ fn main() -> Result<(), std::io::Error> {
                 };
                 let reply = match message_in_enum {
                     Message::PleaseSendPeers(t) => t.send_peers(&ps),
-                    Message::TheseArePeers(t) => t.receive_peers(&mut ps),
+                    Message::Peers(t) => t.receive_peers(&mut ps),
                     Message::PleaseSendContent(t) => t.send_content(&mut inbound_states),
-                    Message::HereIsContent(t) => t.receive_content(&mut inbound_states, src),
+                    Message::Content(t) => t.receive_content(&mut inbound_states, src),
                     Message::ReturnedMessage(t) => t.update_time(&mut ps, src),
                     _ => vec![],
                 };
@@ -227,7 +227,7 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 #[derive(Serialize, Deserialize)]
-struct TheseArePeers {
+struct Peers {
     peers: HashSet<SocketAddr>,
     //   how_to_add_new_fields_without_error: Option<String>,
 }
@@ -244,14 +244,14 @@ impl PleaseSendPeers {
             p
         );
         debug!("sending {:?}/{:?} peers", p.len(), ps.peer_map.len());
-        return vec![Message::TheseArePeers(TheseArePeers {
+        return vec![Message::Peers(Peers {
             //    how_to_add_new_fields_without_error:Some("".to_string()),
             peers: p,
         })];
     }
 }
 
-impl TheseArePeers {
+impl Peers {
     fn receive_peers(&self, ps: &mut PeerState) -> Vec<Message> {
         debug!("received  {:?} peers", self.peers.len());
         for p in &self.peers {
@@ -279,7 +279,7 @@ struct PleaseSendContent {
 }
 
 #[derive(Serialize, Deserialize)]
-struct HereIsContent {
+struct Content {
     id: String,
     offset: u64,
     base64: String,
@@ -324,7 +324,7 @@ impl PleaseSendContent {
         let mut buf = vec![0; length as usize];
         length = file.read_at(&mut buf, self.offset as u64).unwrap() as u64;
         let (content, _) = buf.split_at(length as usize);
-        return vec![Message::HereIsContent(HereIsContent {
+        return vec![Message::Content(Content {
             id: self.id.clone(),
             offset: self.offset,
             base64: general_purpose::STANDARD_NO_PAD.encode(content),
@@ -333,7 +333,7 @@ impl PleaseSendContent {
     }
 }
 
-impl HereIsContent {
+impl Content {
     fn receive_content(
         &self,
         inbound_states: &mut HashMap<String, InboundState>,
@@ -475,6 +475,7 @@ impl InboundState {
             );
             ps.socket.send_to(&message_out_bytes, sa).ok();
         }
+        self.blocks_requested += self.peers.len() as u64;
     }
 }
 
@@ -529,9 +530,9 @@ impl ReturnedMessage {
 #[derive(Serialize, Deserialize)]
 enum Message {
     PleaseSendPeers(PleaseSendPeers),
-    TheseArePeers(TheseArePeers),
+    Peers(Peers),
     PleaseSendContent(PleaseSendContent),
-    HereIsContent(HereIsContent),
+    Content(Content),
     PleaseReturnThisMessage(PleaseReturnThisMessage),
     ReturnedMessage(ReturnedMessage),
 }
