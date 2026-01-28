@@ -83,9 +83,10 @@ impl PeerState {
             .ok();
     }
 
-    fn best_peers(&self, how_many: i32, quality: i32) -> Vec<SocketAddr> {
+
+    fn best_peers(&self, how_many: i32, quality: i32) -> HashSet<SocketAddr> {
         let mut rng = rand::thread_rng();
-        let result: &mut Vec<SocketAddr> = &mut vec![];
+        let result: &mut HashSet<SocketAddr> = &mut HashSet::new();
         for _ in 0..how_many {
             let i: usize = ((rng.gen_range(0.0..1.0) as f64).powi(quality)
                 * (self.peer_vec.len() as f64)) as usize;
@@ -93,7 +94,7 @@ impl PeerState {
                 continue;
             }
             let p = &self.peer_vec[i];
-            result.push(p.0);
+            result.insert(p.0);
             info!(
                 "best peer(q:{quality}) {0} {1} {2} {3}",
                 i,
@@ -228,7 +229,7 @@ fn main() -> Result<(), std::io::Error> {
 
 #[derive(Serialize, Deserialize)]
 struct TheseArePeers {
-    peers: Vec<SocketAddr>,
+    peers: HashSet<SocketAddr>,
     //   how_to_add_new_fields_without_error: Option<String>,
 }
 
@@ -320,7 +321,7 @@ impl PleaseSendContent {
             }
         };
 
-        info!(
+        debug!(
             "going to send {:?} at {:?}",
             self.content_id, self.content_offset
         );
@@ -374,8 +375,8 @@ impl HereIsContent {
         if i.bitmap[block_number] {
             i.dups += 1;
             debug!("dup {block_number}");
-            return vec![];
         }
+        else {
         let content_bytes = general_purpose::STANDARD_NO_PAD
             .decode(&self.content_b64)
             .unwrap();
@@ -384,6 +385,7 @@ impl HereIsContent {
             .unwrap();
         i.blocks_complete += 1;
         i.bitmap.set(block_number, true);
+}
         let mut message_out = i.request_content_block();
         debug!("requesting  {:?} offset {:?} ", i.content_id, i.next_block);
         i.next_block += 1;
@@ -468,11 +470,9 @@ impl InboundState {
         })];
     }
     fn bump(&mut self, ps: &mut PeerState) {
-        for sa in self
-            .peers
-            .clone()
-            .into_iter()
-            .chain(ps.best_peers(50, 6).into_iter())
+        let mut some_peers: HashSet<SocketAddr> = self.peers.clone();
+            some_peers.extend(ps.best_peers(50, 6));
+            for sa in some_peers
         {
             let mut message_out: Vec<Message> = Vec::new();
             message_out.append(&mut self.request_content_block());
@@ -487,7 +487,6 @@ impl InboundState {
             );
             ps.socket.send_to(&message_out_bytes, sa).ok();
         }
-        self.next_block += 1;
     }
 }
 
