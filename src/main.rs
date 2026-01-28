@@ -274,45 +274,45 @@ impl TheseArePeers {
 
 #[derive(Serialize, Deserialize)]
 struct PleaseSendContent {
-    content_id: String,
-    content_length: u64,
-    content_offset: u64,
+    id: String,
+    length: u64,
+    offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 struct HereIsContent {
-    content_id: String,
-    content_offset: u64,
-    content_b64: String,
-    content_eof: u64,
+    id: String,
+    offset: u64,
+    b64: String,
+    eof: u64,
 }
 
 impl PleaseSendContent {
     fn send_content(&self, inbound_states: &mut HashMap<String, InboundState>) -> Vec<Message> {
-        if self.content_id.find("/") != None || self.content_id.find("\\") != None {
+        if self.id.find("/") != None || self.id.find("\\") != None {
             return vec![];
         };
-        let mut content_length = self.content_length;
-        if content_length > (BLOCK_SIZE!()) {
-            content_length = BLOCK_SIZE!()
+        let mut length = self.length;
+        if length > (BLOCK_SIZE!()) {
+            length = BLOCK_SIZE!()
         }
 
         let file: &File;
         let file_: File;
-        if inbound_states.contains_key(&self.content_id)
-            && self.content_offset + content_length < inbound_states[&self.content_id].eof
-            && inbound_states[&self.content_id].bitmap
-                [(self.content_offset / BLOCK_SIZE!()) as usize]
-            && ((self.content_offset % BLOCK_SIZE!()) == 0)
+        if inbound_states.contains_key(&self.id)
+            && self.offset + length < inbound_states[&self.id].eof
+            && inbound_states[&self.id].bitmap
+                [(self.offset / BLOCK_SIZE!()) as usize]
+            && ((self.offset % BLOCK_SIZE!()) == 0)
         {
-            file = &inbound_states[&self.content_id].file;
+            file = &inbound_states[&self.id].file;
         } else {
             // if we're going to get it from ourselves, this is not the way to do it.  If we get here its probably for testing.
-            if inbound_states.contains_key(&self.content_id) {
+            if inbound_states.contains_key(&self.id) {
                 return vec![];
             }
 
-            match File::open(&self.content_id) {
+            match File::open(&self.id) {
                 Ok(_r) => {
                     file_ = _r;
                     file = &file_;
@@ -323,17 +323,17 @@ impl PleaseSendContent {
 
         debug!(
             "going to send {:?} at {:?}",
-            self.content_id, self.content_offset
+            self.id, self.offset
         );
 
-        let mut buf = vec![0; content_length as usize];
-        content_length = file.read_at(&mut buf, self.content_offset as u64).unwrap() as u64;
-        let (content, _) = buf.split_at(content_length as usize);
+        let mut buf = vec![0; length as usize];
+        length = file.read_at(&mut buf, self.offset as u64).unwrap() as u64;
+        let (content, _) = buf.split_at(length as usize);
         return vec![Message::HereIsContent(HereIsContent {
-            content_id: self.content_id.clone(),
-            content_offset: self.content_offset,
-            content_b64: general_purpose::STANDARD_NO_PAD.encode(content),
-            content_eof: file.metadata().unwrap().len(),
+            id: self.id.clone(),
+            offset: self.offset,
+            b64: general_purpose::STANDARD_NO_PAD.encode(content),
+            eof: file.metadata().unwrap().len(),
         })];
     }
 }
@@ -344,31 +344,31 @@ impl HereIsContent {
         inbound_states: &mut HashMap<String, InboundState>,
         src: SocketAddr,
     ) -> Vec<Message> {
-        let block_number = (self.content_offset / BLOCK_SIZE!()) as usize;
-        if !inbound_states.contains_key(&self.content_id) {
+        let block_number = (self.offset / BLOCK_SIZE!()) as usize;
+        if !inbound_states.contains_key(&self.id) {
             return vec![];
         }
-        let i = inbound_states.get_mut(&self.content_id).unwrap();
+        let i = inbound_states.get_mut(&self.id).unwrap();
         i.peers.insert(src);
-        debug!("received  {:?} block {:?}", self.content_id, block_number);
-        if self.content_eof > i.eof {
-            i.eof = self.content_eof;
+        debug!("received  {:?} block {:?}", self.id, block_number);
+        if self.eof > i.eof {
+            i.eof = self.eof;
         }
         let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
         i.bitmap.resize(blocks as usize, false);
         if i.blocks_complete * BLOCK_SIZE!() >= i.eof {
-            println!("{0} complete ", i.content_id);
+            println!("{0} complete ", i.id);
             warn!(
                 "{0} complete {1} dups of {2} blocks {3}% loss",
-                i.content_id,
+                i.id,
                 i.dups,
                 i.blocks_complete,
                 100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64))
             );
-            let path = "./incoming/".to_owned() + &i.content_id;
-            let new_path = "./".to_owned() + &i.content_id;
+            let path = "./incoming/".to_owned() + &i.id;
+            let new_path = "./".to_owned() + &i.id;
             fs::rename(path, new_path).unwrap();
-            inbound_states.remove(&self.content_id);
+            inbound_states.remove(&self.id);
             return vec![];
         };
 
@@ -377,23 +377,23 @@ impl HereIsContent {
             debug!("dup {block_number}");
         }
         else {
-        let content_bytes = general_purpose::STANDARD_NO_PAD
-            .decode(&self.content_b64)
+        let bytes = general_purpose::STANDARD_NO_PAD
+            .decode(&self.b64)
             .unwrap();
         i.file
-            .write_at(&content_bytes, self.content_offset)
+            .write_at(&bytes, self.offset)
             .unwrap();
         i.blocks_complete += 1;
         i.bitmap.set(block_number, true);
 }
-        let mut message_out = i.request_content_block();
-        debug!("requesting  {:?} offset {:?} ", i.content_id, i.next_block);
+        let mut message_out = i.request_block();
+        debug!("requesting  {:?} offset {:?} ", i.id, i.next_block);
         i.next_block += 1;
         if (i.blocks_complete % 100) == 0 {
-            message_out.append(&mut i.request_content_block());
+            message_out.append(&mut i.request_block());
             debug!(
                 "requesting  {:?} offset {:?} ACCELERATOR",
-                i.content_id, i.next_block
+                i.id, i.next_block
             );
             i.next_block += 1;
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
@@ -408,7 +408,7 @@ struct InboundState {
     file: File,
     next_block: u64,
     bitmap: BitVec,
-    content_id: String,
+    id: String,
     eof: u64,
     blocks_complete: u64,
     blocks_requested: u64,
@@ -419,10 +419,10 @@ struct InboundState {
 impl InboundState {
     fn new_inbound_state(
         inbound_states: &mut HashMap<String, InboundState>,
-        content_id: &str,
+        id: &str,
     ) -> () {
         fs::create_dir("./incoming").ok();
-        let path = "./incoming/".to_owned() + &content_id;
+        let path = "./incoming/".to_owned() + &id;
         let mut inbound_state = InboundState {
             file: OpenOptions::new()
                 .create(true)
@@ -432,7 +432,7 @@ impl InboundState {
                 .unwrap(),
             next_block: 0,
             bitmap: BitVec::new(),
-            content_id: content_id.to_string(),
+            id: id.to_string(),
             eof: 1,
             blocks_complete: 0,
             blocks_requested: 0,
@@ -440,16 +440,16 @@ impl InboundState {
             dups: 0,
         };
         inbound_state.bitmap.resize(1, false);
-        inbound_states.insert(content_id.to_string(), inbound_state);
+        inbound_states.insert(id.to_string(), inbound_state);
     }
 
-    fn request_content_block(&mut self) -> Vec<Message> {
+    fn request_block(&mut self) -> Vec<Message> {
         if self.blocks_complete * BLOCK_SIZE!() >= self.eof {
             return vec![];
         }
         while {
             if self.next_block * BLOCK_SIZE!() >= self.eof {
-                info!("almost done with {0}", self.content_id);
+                info!("almost done with {0}", self.id);
                 info!("pending blocks: ");
 
                 for i in self.bitmap.iter_zeros() {
@@ -464,9 +464,9 @@ impl InboundState {
         }
         self.blocks_requested += 1;
         return vec![Message::PleaseSendContent(PleaseSendContent {
-            content_id: self.content_id.to_owned(),
-            content_offset: self.next_block * BLOCK_SIZE!(),
-            content_length: BLOCK_SIZE!(),
+            id: self.id.to_owned(),
+            offset: self.next_block * BLOCK_SIZE!(),
+            length: BLOCK_SIZE!(),
         })];
     }
     fn bump(&mut self, ps: &mut PeerState) {
@@ -475,7 +475,7 @@ impl InboundState {
             for sa in some_peers
         {
             let mut message_out: Vec<Message> = Vec::new();
-            message_out.append(&mut self.request_content_block());
+            message_out.append(&mut self.request_block());
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
                 sent_at: UNIX_EPOCH.elapsed().unwrap().as_secs_f64(),
             }));
@@ -483,7 +483,7 @@ impl InboundState {
             trace!("sending message {:?}", str::from_utf8(&message_out_bytes));
             debug!(
                 "requesting  {:?} offset {:?} EXTRA from {:?}",
-                self.content_id, self.next_block, sa
+                self.id, self.next_block, sa
             );
             ps.socket.send_to(&message_out_bytes, sa).ok();
         }
