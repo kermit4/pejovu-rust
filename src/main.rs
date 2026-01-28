@@ -140,7 +140,7 @@ fn main() -> Result<(), std::io::Error> {
     ps.socket.set_read_timeout(Some(Duration::new(1, 0)))?;
     let mut last_maintenance = UNIX_EPOCH;
     loop {
-        if last_maintenance.elapsed().unwrap() > Duration::from_secs(20) {
+        if last_maintenance.elapsed().unwrap() > Duration::from_secs(2) {
             last_maintenance = SystemTime::now();
             maintenance(&mut inbound_states, &mut ps);
         }
@@ -303,6 +303,7 @@ impl PleaseSendContent {
             && self.offset + length < inbound_states[&self.id].eof
             && inbound_states[&self.id].bitmap[(self.offset / BLOCK_SIZE!()) as usize]
             && ((self.offset % BLOCK_SIZE!()) == 0)
+        // TODO it is rude to ignore them just because they asked for a non-aligned block, but be sure im checking all blocks otherwise
         {
             file = &inbound_states[&self.id].file;
         } else {
@@ -354,14 +355,6 @@ impl Content {
         i.bitmap.resize(blocks as usize, false);
         if i.blocks_complete * BLOCK_SIZE!() >= i.eof {
             println!("{0} complete ", i.id);
-            warn!(
-                "{0} complete {1} dups of, lost {2}% {3}/{4} blocks",
-                i.id,
-                i.dups,
-                100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)),
-                i.blocks_requested as i64 - (i.blocks_complete + i.dups) as i64,
-                i.blocks_requested
-            );
             let path = "./incoming/".to_owned() + &i.id;
             let new_path = "./".to_owned() + &i.id;
             fs::rename(path, new_path).unwrap();
@@ -381,12 +374,10 @@ impl Content {
             i.bitmap.set(block_number, true);
         }
         i.next_block += 1;
-        i.blocks_requested += 1;
         let mut message_out = i.request_block();
         debug!("requesting  {:?} offset {:?} ", i.id, i.next_block);
         if (i.blocks_complete % 100) == 0 {
             i.next_block += 1;
-            i.blocks_requested += 1;
             message_out.append(&mut i.request_block());
             debug!(
                 "requesting  {:?} offset {:?} ACCELERATOR",
@@ -407,7 +398,6 @@ struct InboundState {
     id: String,
     eof: u64,
     blocks_complete: u64,
-    blocks_requested: u64,
     dups: u64,
     peers: HashSet<SocketAddr>, // last host
 }
@@ -428,7 +418,6 @@ impl InboundState {
             id: id.to_string(),
             eof: 1,
             blocks_complete: 0,
-            blocks_requested: 0,
             peers: HashSet::new(),
             dups: 0,
         };
@@ -443,8 +432,17 @@ impl InboundState {
         while {
             if self.next_block * BLOCK_SIZE!() >= self.eof {
                 info!("almost done with {0}", self.id);
-                debug!("pending blocks: ");
+                let should_have = self.bitmap.iter_ones().last().unwrap() + 1; // don't include the tail thats in flight for this calculation
+                info!(
+                    "{0} almost done {1} dups of, lost {2}% {3}/{4} blocks ",
+                    self.id,
+                    self.dups,
+                    100.0 * (1.0 - (self.blocks_complete as f64 / should_have as f64)),
+                    should_have as i64 - self.blocks_complete as i64,
+                    should_have
+                );
 
+                info!("pending blocks: ");
                 for i in self.bitmap.iter_zeros() {
                     info!("{i}");
                 }
@@ -478,7 +476,6 @@ impl InboundState {
             );
             ps.socket.send_to(&message_out_bytes, sa).ok();
         }
-        self.blocks_requested += self.peers.len() as u64;
     }
 }
 
