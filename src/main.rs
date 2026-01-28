@@ -320,7 +320,7 @@ impl PleaseSendContent {
             }
         };
 
-        debug!("going to send {:?} at {:?}", self.id, self.offset);
+        debug!("going to send {:?} at {:?}", self.id, self.offset/BLOCK_SIZE!());
 
         let mut buf = vec![0; length as usize];
         length = file.read_at(&mut buf, self.offset as u64).unwrap() as u64;
@@ -446,7 +446,7 @@ impl InboundState {
                     should_have
                 );
 
-                info!("pending blocks: ");
+                info!("re-requesting unreceived blocks (the tail is probably in flight, not lost): ");
                 for i in self.bitmap.iter_zeros() {
                     info!("{i}");
                 }
