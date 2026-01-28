@@ -296,8 +296,8 @@ impl PleaseSendContent {
             return vec![];
         };
         let mut length = self.length;
-        if length > (BLOCK_SIZE!()) {
-            length = BLOCK_SIZE!()
+        if length > (0xa000) {
+            length = 0xa000;
         }
 
         let file: &File;
