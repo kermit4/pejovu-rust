@@ -354,11 +354,12 @@ impl Content {
         if i.blocks_complete * BLOCK_SIZE!() >= i.eof {
             println!("{0} complete ", i.id);
             warn!(
-                "{0} complete {1} dups of {2} blocks {3}% loss",
+                "{0} complete {1} dups of, lost {2}% {3}/{4} blocks",
                 i.id,
                 i.dups,
+                100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)),
+                 ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64),
                 i.blocks_complete,
-                100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64))
             );
             let path = "./incoming/".to_owned() + &i.id;
             let new_path = "./".to_owned() + &i.id;
