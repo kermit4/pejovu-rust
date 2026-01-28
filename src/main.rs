@@ -359,8 +359,8 @@ impl Content {
                 i.id,
                 i.dups,
                 100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)),
-                 i.blocks_requested as i64 - (i.blocks_complete + i.dups)as i64  ,
-                  i.blocks_requested 
+                i.blocks_requested as i64 - (i.blocks_complete + i.dups) as i64,
+                i.blocks_requested
             );
             let path = "./incoming/".to_owned() + &i.id;
             let new_path = "./".to_owned() + &i.id;
@@ -386,7 +386,7 @@ impl Content {
         debug!("requesting  {:?} offset {:?} ", i.id, i.next_block);
         if (i.blocks_complete % 100) == 0 {
             i.next_block += 1;
-        i.blocks_requested += 1;
+            i.blocks_requested += 1;
             message_out.append(&mut i.request_block());
             debug!(
                 "requesting  {:?} offset {:?} ACCELERATOR",
