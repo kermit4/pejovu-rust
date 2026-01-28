@@ -70,6 +70,7 @@ impl PeerState {
         }
     }
     fn save_peers(&self) -> () {
+        debug!("saving peers");
         OpenOptions::new()
             .create(true)
             .write(true)
@@ -139,7 +140,7 @@ fn main() -> Result<(), std::io::Error> {
     ps.socket.set_read_timeout(Some(Duration::new(1, 0)))?;
     let mut last_maintenance = UNIX_EPOCH;
     loop {
-        if last_maintenance.elapsed().unwrap() > Duration::from_secs(1) {
+        if last_maintenance.elapsed().unwrap() > Duration::from_secs(20) {
             last_maintenance = SystemTime::now();
             maintenance(&mut inbound_states, &mut ps);
         }
@@ -358,8 +359,8 @@ impl Content {
                 i.id,
                 i.dups,
                 100.0 * (1.0 - ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64)),
-                 ((i.blocks_complete + i.dups) as f64 / i.blocks_requested as f64),
-                i.blocks_complete,
+                 i.blocks_requested as i64 - (i.blocks_complete + i.dups)as i64  ,
+                  i.blocks_requested 
             );
             let path = "./incoming/".to_owned() + &i.id;
             let new_path = "./".to_owned() + &i.id;
@@ -379,16 +380,18 @@ impl Content {
             i.blocks_complete += 1;
             i.bitmap.set(block_number, true);
         }
+        i.next_block += 1;
+        i.blocks_requested += 1;
         let mut message_out = i.request_block();
         debug!("requesting  {:?} offset {:?} ", i.id, i.next_block);
-        i.next_block += 1;
         if (i.blocks_complete % 100) == 0 {
+            i.next_block += 1;
+        i.blocks_requested += 1;
             message_out.append(&mut i.request_block());
             debug!(
                 "requesting  {:?} offset {:?} ACCELERATOR",
                 i.id, i.next_block
             );
-            i.next_block += 1;
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
                 sent_at: UNIX_EPOCH.elapsed().unwrap().as_secs_f64(),
             }));
@@ -440,7 +443,7 @@ impl InboundState {
         while {
             if self.next_block * BLOCK_SIZE!() >= self.eof {
                 info!("almost done with {0}", self.id);
-                info!("pending blocks: ");
+                debug!("pending blocks: ");
 
                 for i in self.bitmap.iter_zeros() {
                     info!("{i}");
@@ -452,7 +455,6 @@ impl InboundState {
         } {
             self.next_block += 1;
         }
-        self.blocks_requested += 1;
         return vec![Message::PleaseSendContent(PleaseSendContent {
             id: self.id.to_owned(),
             offset: self.next_block * BLOCK_SIZE!(),
@@ -482,9 +484,7 @@ impl InboundState {
 
 fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
     ps.sort();
-    //if Utc::now().second() + (Utc::now().minute() % 5) == 0 {
-    if Utc::now().second() % 5 == 0 {
-        // for testing
+    if Utc::now().second() + (Utc::now().minute() % 5) == 0 {
         ps.save_peers();
     }
 
