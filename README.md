@@ -32,8 +32,6 @@ maybe replies just include request and that it is a reply, so cookies and all da
  
 cookie as its own message.  be sure to call part timestamp too  so people dont cache it
 
-timer to say hey and ask whatsup
-
 trim peers last seen or rtt? or both? and track unverified
 ping new.   
 
