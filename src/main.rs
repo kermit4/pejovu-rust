@@ -499,21 +499,11 @@ impl InboundState {
         self.message_request_extra_block(ps, ps.best_peers(50, 6));
     }
     fn message_request_extra_block(&mut self, ps: &mut PeerState, some_peers: HashSet<SocketAddr>) {
-        let mut wanted_block = self.next_block;
-        let next_mi = self.bitmap.first_zero().unwrap() as u64;
-        we want a next_missing that loops without known window on older than 2x  window loop
-        let highest_received = self.bitmap.iter_ones().last().unwrap_or_default() as i64;
-        let window = self.next_block as i64 - highest_received;
-        if (lowest_missing as i64) < highest_received - window {
-            wanted_block = next_missing;
-        }
+        let first_missing = self.bitmap.first_zero().unwrap() as u64;
         for sa in some_peers {
-            let mut message_out: Vec<Message> = Vec::new();
-            message_out.append(
-
-               return vec![Message::PleaseSendContent(PleaseSendContent {
+            let mut message_out: Vec<Message> = vec![Message::PleaseSendContent(PleaseSendContent {
             id: self.id.to_owned(),
-            offset: wanted_block * BLOCK_SIZE!(),
+            offset: first_missing * BLOCK_SIZE!(),
             length: BLOCK_SIZE!(),
         })];
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
