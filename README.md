@@ -49,3 +49,5 @@ streaming live cam of somethin is a good test case.. the sky .. ffmpeg -i /dev/v
 
 streams...allow lossy for real time, must know where to break blocks and a codec that allows it
 c
+
+broahcast and multicast peer discovery..listen on known and unknown ports?
