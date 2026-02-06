@@ -101,8 +101,8 @@ impl PeerState {
         let mut rng = rand::thread_rng();
         let result: &mut HashSet<SocketAddr> = &mut HashSet::new();
         for _ in 0..how_many {
-            let i: usize = ((rng.gen_range(0.0..1.0) as f64).powi(quality)
-                * (self.peer_vec.len() as f64)) as usize;
+            let i = ((rng.gen_range(0.0..1.0) as f64).powi(quality) * (self.peer_vec.len() as f64))
+                as usize;
             if i >= self.peer_vec.len() {
                 continue;
             }
@@ -288,16 +288,16 @@ impl Peers {
 #[derive(Serialize, Deserialize)]
 struct PleaseSendContent {
     id: String,
-    length: u64,
-    offset: u64,
+    length: usize,
+    offset: usize,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Content {
     id: String,
-    offset: u64,
+    offset: usize,
     base64: String,
-    eof: u64,
+    eof: usize,
 }
 
 impl PleaseSendContent {
@@ -310,7 +310,7 @@ impl PleaseSendContent {
             return vec![];
         };
         let mut length = self.length;
-        if length > (0xa000) {
+        if length > 0xa000 {
             length = 0xa000;
         }
 
@@ -318,7 +318,7 @@ impl PleaseSendContent {
         let file_: File;
         if inbound_states.contains_key(&self.id)
             && self.offset + length < inbound_states[&self.id].eof
-            && inbound_states[&self.id].bitmap[(self.offset / BLOCK_SIZE!()) as usize]
+            && inbound_states[&self.id].bitmap[self.offset / BLOCK_SIZE!()]
             && ((self.offset % BLOCK_SIZE!()) == 0)
         // TODO it is rude to ignore them just because they asked for a non-aligned block, but be sure im checking all blocks otherwise
         {
@@ -345,14 +345,14 @@ impl PleaseSendContent {
             src
         );
 
-        let mut buf = vec![0; length as usize];
-        length = file.read_at(&mut buf, self.offset as u64).unwrap() as u64;
-        let (content, _) = buf.split_at(length as usize);
+        let mut buf = vec![0; length];
+        length = file.read_at(&mut buf, self.offset as u64).unwrap();
+        let (content, _) = buf.split_at(length);
         return vec![Message::Content(Content {
             id: self.id.clone(),
             offset: self.offset,
             base64: general_purpose::STANDARD_NO_PAD.encode(content),
-            eof: file.metadata().unwrap().len(),
+            eof: file.metadata().unwrap().len() as usize,
         })];
     }
 }
@@ -381,16 +381,16 @@ impl Content {
             i.eof = self.eof;
         }
         let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
-        i.bitmap.resize(blocks as usize, false);
+        i.bitmap.resize(blocks, false);
 
-        if i.bitmap[block_number as usize] {
+        if i.bitmap[block_number] {
             i.dups += 1;
             debug!("dup {block_number}");
         } else {
             let bytes = general_purpose::STANDARD_NO_PAD
                 .decode(&self.base64)
                 .unwrap();
-            i.file.write_at(&bytes, self.offset).unwrap();
+            i.file.write_at(&bytes, self.offset as u64).unwrap();
             if (i.blocks_complete + 1) * BLOCK_SIZE!() >= i.eof {
                 println!("{0} complete ", i.id);
                 let path = "./incoming/".to_owned() + &i.id;
@@ -402,11 +402,11 @@ impl Content {
             if bytes.len() == BLOCK_SIZE!() {
                 // no reason someone would send a short block, but, just in case
                 i.blocks_complete += 1;
-                i.bitmap.set(block_number as usize, true);
+                i.bitmap.set(block_number, true);
                 if block_number > i.highest_block_received {
                     i.highest_block_received = block_number;
                 }
-                while i.bitmap[i.lowest_block_not_received as usize]
+                while i.bitmap[i.lowest_block_not_received]
                     && i.lowest_block_not_received < i.highest_block_received
                 {
                     i.lowest_block_not_received += 1;
@@ -421,7 +421,7 @@ impl Content {
             i.next_block as i64 - i.bitmap.iter_ones().last().unwrap_or_default() as i64,
             src
         );
-        if (i.blocks_complete % 70) == 0 {
+        if (i.blocks_complete % 101) == 0 {
             i.grow_window(ps);
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
                 sent_at: ps.boot.elapsed().as_secs_f64(),
@@ -433,15 +433,15 @@ impl Content {
 //
 struct InboundState {
     file: File,
-    next_block: u64,
-    highest_block_received: u64,
-    lowest_block_not_received: u64,
-    next_block_to_retry: u64,
+    next_block: usize,
+    highest_block_received: usize,
+    lowest_block_not_received: usize,
+    next_block_to_retry: usize,
     bitmap: BitVec,
     id: String,
-    eof: u64,
-    blocks_complete: u64,
-    dups: u64,
+    eof: usize,
+    blocks_complete: usize,
+    dups: usize,
     peers: HashSet<SocketAddr>,
     last_time_received: Instant,
 }
@@ -501,7 +501,7 @@ impl InboundState {
 
                 self.next_block = 0;
             }
-            self.bitmap[self.next_block as usize]
+            self.bitmap[self.next_block]
         } {}
         return vec![Message::PleaseSendContent(PleaseSendContent {
             id: self.id.to_owned(),
@@ -512,7 +512,7 @@ impl InboundState {
     fn grow_window(&mut self, ps: &mut PeerState) {
         debug!("growing window for {0}", self.id);
         self.retry_block(ps, self.peers.clone());
-            self.next_block_to_retry += 1;
+        self.next_block_to_retry += 1;
     }
     fn search(&mut self, ps: &mut PeerState) {
         debug!("searching for {0}", self.id);
@@ -521,7 +521,7 @@ impl InboundState {
     fn retry_block(&mut self, ps: &mut PeerState, some_peers: HashSet<SocketAddr>) {
         while {
             self.next_block_to_retry < self.highest_block_received
-                && self.bitmap[self.next_block_to_retry as usize]
+                && self.bitmap[self.next_block_to_retry]
         } {
             self.next_block_to_retry += 1;
         }
@@ -551,15 +551,16 @@ impl InboundState {
 
 fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
     ps.sort();
-    if Utc::now().second()/3 + (Utc::now().minute() % 5) == 0 {
+    if Utc::now().second() / 3 + (Utc::now().minute() % 5) == 0 {
         ps.save_peers();
     }
     ps.probe();
 
     for (_, i) in inbound_states.iter_mut() {
         i.grow_window(ps);
-        i.next_block_to_retry = i.lowest_block_not_received; 
-        if i.last_time_received.elapsed() > Duration::from_secs(3) { // stalled
+        i.next_block_to_retry = i.lowest_block_not_received;
+        if i.last_time_received.elapsed() > Duration::from_secs(3) {
+            // stalled
             i.next_block = i.lowest_block_not_received;
             i.search(ps);
             i.grow_window(ps);
