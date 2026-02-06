@@ -276,7 +276,7 @@ impl Peers {
         for p in &self.peers {
             let sa: SocketAddr = *p;
             if !ps.peer_map.contains_key(&sa) {
-                warn!("new peer suggested {sa}");
+                info!("new peer suggested {sa}");
                 ps.peer_map.insert(
                     sa,
                     PeerInfo {
