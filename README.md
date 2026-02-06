@@ -51,3 +51,5 @@ streams...allow lossy for real time, must know where to break blocks and a codec
 c
 
 broahcast and multicast peer discovery..listen on known and unknown ports?
+
+CLI commands  / API, run as a daemon?  do we want each app speaking the protocol or using a daemon("node")?

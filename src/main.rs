@@ -182,7 +182,12 @@ fn main() -> Result<(), std::io::Error> {
             String::from_utf8_lossy(message_in_bytes)
         );
         match ps.peer_map.get_mut(&src) {
-            Some(peer) => peer.when_last_seen = Instant::now(),
+            Some(peer) => {
+                if peer.when_last_seen.elapsed().as_secs_f64() > 99999999.0 {
+                    warn!("new peer confirmed {src}");
+                }
+                peer.when_last_seen = Instant::now()
+            }
             _ => {
                 ps.peer_map.insert(
                     src,
