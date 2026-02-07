@@ -164,10 +164,10 @@ fn main() -> Result<(), std::io::Error> {
     ps.load_peers();
     let mut args = env::args();
     args.next();
-    let mut inbound_states: HashMap<String, InboundState> = HashMap::new();
+    let mut inbound_states: HashMap<String, TransferStatus> = HashMap::new();
     for v in args {
         info!("queing inbound file {:?}", v);
-        InboundState::new_inbound_state(&mut inbound_states, v.as_str());
+        TransferStatus::new_inbound_state(&mut inbound_states, v.as_str());
     }
     ps.socket.set_read_timeout(Some(Duration::new(1, 0)))?;
     let mut last_maintenance = Instant::now() - Duration::new(10, 0);
@@ -326,7 +326,7 @@ struct Content {
 impl PleaseSendContent {
     fn send_content(
         &self,
-        inbound_states: &mut HashMap<String, InboundState>,
+        inbound_states: &mut HashMap<String, TransferStatus>,
         src: SocketAddr,
     ) -> Vec<Message> {
         if self.id.find("/") != None || self.id.find("\\") != None {
@@ -383,7 +383,7 @@ impl PleaseSendContent {
 impl Content {
     fn receive_content(
         &self,
-        inbound_states: &mut HashMap<String, InboundState>,
+        inbound_states: &mut HashMap<String, TransferStatus>,
         src: SocketAddr,
         ps: &mut PeerState,
     ) -> Vec<Message> {
@@ -454,7 +454,7 @@ impl Content {
     }
 }
 //
-struct InboundState {
+struct TransferStatus {
     file: File,
     next_block: usize,
     highest_block_received: usize,
@@ -469,11 +469,11 @@ struct InboundState {
     last_time_received: Instant,
 }
 
-impl InboundState {
-    fn new_inbound_state(inbound_states: &mut HashMap<String, InboundState>, id: &str) -> () {
+impl TransferStatus {
+    fn new_inbound_state(inbound_states: &mut HashMap<String, TransferStatus>, id: &str) -> () {
         fs::create_dir("./incoming").ok();
         let path = "./incoming/".to_owned() + &id;
-        let mut inbound_state = InboundState {
+        let mut inbound_state = TransferStatus {
             file: OpenOptions::new()
                 .create(true)
                 .read(true)
@@ -572,7 +572,7 @@ impl InboundState {
     }
 }
 
-fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
+fn maintenance(inbound_states: &mut HashMap<String, TransferStatus>, ps: &mut PeerState) -> () {
     ps.sort();
     if Utc::now().second() / 3 + (Utc::now().minute() % 5) == 0 {
         ps.save_peers();
