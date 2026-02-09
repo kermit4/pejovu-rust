@@ -241,6 +241,9 @@ fn main() -> Result<(), std::io::Error> {
                     Message::PleaseSendContent(t) => t.send_content(&mut inbound_states, src),
                     Message::Content(t) => t.receive_content(&mut inbound_states, src, &mut ps),
                     Message::ReturnedMessage(t) => t.update_time(&mut ps, src),
+                    Message::ContentPeerSuggestions(t) => {
+                        t.add_peer_suggestions(&mut inbound_states)
+                    }
                     _ => vec![],
                 };
                 for m in reply {
@@ -611,6 +614,22 @@ fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut Peer
 struct ContentPeerSuggestions {
     id: String,
     peers: HashSet<SocketAddr>,
+}
+
+impl ContentPeerSuggestions {
+    fn add_peer_suggestions(
+        self,
+        inbound_states: &mut HashMap<String, InboundState>,
+    ) -> Vec<Message> {
+        if !inbound_states.contains_key(&self.id) {
+            return vec![];
+        }
+        let i = inbound_states.get_mut(&self.id).unwrap();
+        for p in self.peers {
+            i.peers.insert(p);
+        }
+        vec![]
+    }
 }
 #[derive(Serialize, Deserialize)]
 struct PleaseReturnThisMessage {
