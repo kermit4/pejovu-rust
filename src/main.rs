@@ -344,7 +344,8 @@ impl PleaseSendContent {
         let file_: File;
         let mut message_out: Vec<Message> = Vec::new();
         if inbound_states.contains_key(&self.id) {
-            let i = &inbound_states[&self.id];
+            let i = inbound_states.get_mut(&self.id).unwrap();
+            i.peers.insert(src);
 
             if (rand::thread_rng().gen::<u32>() % 37) == 0 {
                 message_out.push(Message::ContentPeerSuggestions(ContentPeerSuggestions {
@@ -353,8 +354,8 @@ impl PleaseSendContent {
                 }));
             }
 
-            if self.offset + length < inbound_states[&self.id].eof
-                && inbound_states[&self.id].bitmap[self.offset / BLOCK_SIZE!()]
+            if self.offset + length < i.eof
+                && i.bitmap[self.offset / BLOCK_SIZE!()]
                 && ((self.offset % BLOCK_SIZE!()) == 0)
             // TODO it is rude to ignore them just because they asked for a non-aligned block, but be sure im checking all blocks otherwise
             {
@@ -370,11 +371,15 @@ impl PleaseSendContent {
                 return message_out;
             }
         } else {
+            // TODO we should have saved our peer list near the file to share with othhers
             match File::open(&self.id) {
                 Ok(_r) => {
                     file_ = _r;
                     file = &file_;
                 }
+                // TODO even if we dont have and arent downloading the file, maybe we should be nice and keep track
+                // of who's been looking and send them ContentPeerSuggestions ..they would really
+                // appreciate it i'm sure, and costs us very little
                 _ => return message_out,
             }
         }
