@@ -415,7 +415,7 @@ impl Content {
     ) -> Vec<Message> {
         if !inbound_states.contains_key(&self.id) {
             debug!(
-                "spam, probably tail dups, for {0} block {1}",
+                "unwanted content, probably dups still in flight after completion, for {0} block {1}",
                 self.id,
                 self.offset / BLOCK_SIZE!()
             );
@@ -430,14 +430,15 @@ impl Content {
             self.id, block_number, src
         );
         let bytes = general_purpose::STANDARD.decode(&self.base64).unwrap();
-        if self.eof.is_some() && self.eof.unwrap() > i.eof {
-            i.eof = self.eof.unwrap();
-        } else {
-            let this_eof = self.offset + bytes.len() + 1;
+        let this_eof = 
+        match self.eof {
+            Some(n) =>  n,
+            None => self.offset + bytes.len() + 1,
+        };
+
             if this_eof > i.eof {
                 i.eof = this_eof;
             }
-        }
         let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
         i.bitmap.resize(blocks, false);
 
@@ -446,7 +447,7 @@ impl Content {
             debug!("dup {block_number}");
         } else {
             i.file.write_at(&bytes, self.offset as u64).unwrap();
-            if (i.blocks_complete + 1) * BLOCK_SIZE!() >= i.eof {
+            if i.blocks_complete +1 == blocks {
                 println!("{0} complete ", i.id);
                 let path = "./incoming/".to_owned() + &i.id;
                 let new_path = "./".to_owned() + &i.id;
@@ -476,7 +477,7 @@ impl Content {
             i.next_block as i64 - i.bitmap.iter_ones().last().unwrap_or_default() as i64,
             src
         );
-        if (i.blocks_complete % 101) == 0 {
+        if (rand::thread_rng().gen::<u32>() % 101) == 0 {
             i.request_more_in_transit(ps);
             message_out.push(Message::PleaseReturnThisMessage(PleaseReturnThisMessage {
                 sent_at: ps.boot.elapsed().as_secs_f64(),
@@ -537,14 +538,16 @@ impl InboundState {
             if self.next_block * BLOCK_SIZE!() >= self.eof {
                 info!("almost done with {0}", self.id);
                 info!(
-                    "{0} almost done {1} dups of, lost {2}% {3}/{4} blocks ",
+                    "{0} almost done {1} dups of, lost {2}% {3} lost {4}/{5} blocks done (eof: {6})",
                     self.id,
                     self.dups,
                     100.0
                         * (1.0
                             - (self.blocks_complete as f64 / self.highest_block_received as f64)),
                     self.highest_block_received as i64 - self.blocks_complete as i64,
-                    self.highest_block_received
+                    self.blocks_complete,
+                    self.highest_block_received,
+                    self.eof
                 );
 
                 info!(
