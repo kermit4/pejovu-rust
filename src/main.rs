@@ -445,7 +445,7 @@ impl Content {
         } else {
             i.file.write_at(&bytes, self.offset as u64).unwrap();
             if i.blocks_complete + 1 == blocks {
-                println!("{0} complete ", i.id);
+                println!("{0} finished ", i.id);
                 let path = "./incoming/".to_owned() + &i.id;
                 let new_path = "./".to_owned() + &i.id;
                 fs::rename(path, new_path).unwrap();
