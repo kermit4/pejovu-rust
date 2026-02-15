@@ -429,7 +429,10 @@ impl Content {
         );
         let bytes = general_purpose::STANDARD.decode(&self.base64).unwrap();
         let this_eof = match self.eof {
-            Some(n) => n,
+            Some(n) => {
+                debug!("got eof {:?}", n);
+                n
+            }
             None => self.offset + bytes.len() + 1,
         };
 
@@ -444,7 +447,7 @@ impl Content {
             debug!("dup {block_number}");
         } else {
             i.file.write_at(&bytes, self.offset as u64).unwrap();
-            if i.blocks_complete + 1 == blocks {
+            if i.bytes_complete + bytes.len() == i.eof {
                 println!("{0} finished ", i.id);
                 let path = "./incoming/".to_owned() + &i.id;
                 let new_path = "./".to_owned() + &i.id;
@@ -454,7 +457,9 @@ impl Content {
             };
             if bytes.len() == BLOCK_SIZE!() {
                 // no reason someone would send a short block, but, just in case
-                i.blocks_complete += 1;
+                // i think this is a bug that will ignore the last block until the rest is done,
+                // unless its the usual block size
+                i.bytes_complete += bytes.len();
                 i.bitmap.set(block_number, true);
                 if block_number > i.highest_block_received {
                     i.highest_block_received = block_number;
@@ -493,7 +498,7 @@ struct InboundState {
     bitmap: BitVec,
     id: String,
     eof: usize,
-    blocks_complete: usize,
+    bytes_complete: usize,
     dups: usize,
     peers: HashSet<SocketAddr>,
     last_time_received: Instant,
@@ -517,7 +522,7 @@ impl InboundState {
             bitmap: BitVec::new(),
             id: id.to_string(),
             eof: 1,
-            blocks_complete: 0,
+            bytes_complete: 0,
             peers: HashSet::new(),
             dups: 0,
             last_time_received: Instant::now() - Duration::new(999, 00),
@@ -527,7 +532,7 @@ impl InboundState {
     }
 
     fn request_block(&mut self) -> Vec<Message> {
-        if self.blocks_complete * BLOCK_SIZE!() >= self.eof {
+        if self.bytes_complete >= self.eof {
             return vec![];
         }
         while {
@@ -540,9 +545,9 @@ impl InboundState {
                     self.dups,
                     100.0
                         * (1.0
-                            - (self.blocks_complete as f64 / self.highest_block_received as f64)),
-                    self.highest_block_received as i64 - self.blocks_complete as i64,
-                    self.blocks_complete,
+                            - (self.bytes_complete as f64 / BLOCK_SIZE!() as f64 / self.highest_block_received as f64)),
+                    self.highest_block_received as i64 - self.bytes_complete as i64 / BLOCK_SIZE!() ,
+                    self.bytes_complete/BLOCK_SIZE!(),
                     self.highest_block_received,
                     self.eof
                 );
