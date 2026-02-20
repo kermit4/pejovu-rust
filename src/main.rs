@@ -132,34 +132,20 @@ fn main() -> Result<(), std::io::Error> {
         boot: Instant::now(),
     };
     ps.socket.set_broadcast(true).ok();
-    ps.peer_map.insert(
-        "148.71.89.128:24254".parse().unwrap(),
-        PeerInfo {
-            when_last_seen: Instant::now(),
-            delay: Duration::new(1, 0),
-        },
-    );
-    ps.peer_map.insert(
-        "159.69.54.127:24254".parse().unwrap(),
-        PeerInfo {
-            when_last_seen: Instant::now(),
-            delay: Duration::new(1, 0),
-        },
-    );
-    ps.peer_map.insert(
-        "192.168.1.255:24254".parse().unwrap(),
-        PeerInfo {
-            when_last_seen: Instant::now(),
-            delay: Duration::new(1, 0),
-        },
-    );
-    ps.peer_map.insert(
-        "224.0.0.1:24254".parse().unwrap(),
-        PeerInfo {
-            when_last_seen: Instant::now(),
-            delay: Duration::new(1, 0),
-        },
-    );
+    for p in [
+        "148.71.89.128:24254",
+        "159.69.54.127:24254",
+        "192.168.1.255:24254",
+        "224.0.0.1:24254",
+    ] {
+        ps.peer_map.insert(
+            p.parse().unwrap(),
+            PeerInfo {
+                when_last_seen: Instant::now(),
+                delay: Duration::new(1, 0),
+            },
+        );
+    }
     fs::create_dir("./shared").ok();
     std::env::set_current_dir("./shared").unwrap();
     ps.load_peers();
@@ -672,10 +658,8 @@ impl MaybeTheyHaveSome {
             return vec![];
         }
         let i = inbound_states.get_mut(&self.id).unwrap();
-        for p in self.peers {
-            i.peers.insert(p);
-        }
-        vec![]
+        i.peers.extend(self.peers);
+        return vec![];
     }
 }
 #[derive(Serialize, Deserialize)]
