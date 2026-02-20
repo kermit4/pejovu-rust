@@ -1,12 +1,13 @@
 use base64::{engine::general_purpose, Engine as _};
 use bitvec::prelude::*;
 use chrono::{Timelike, Utc};
-use log::{debug, info, log_enabled, trace, warn, Level};
+use log::{debug, error, info, log_enabled, trace, warn, Level};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::io::Write;
 //use std::convert::TryInto;
 use std::env;
@@ -124,16 +125,6 @@ impl PeerState {
 }
 fn main() -> Result<(), std::io::Error> {
     env_logger::init();
-    let mut hasher = Sha256::new();
-    let input = b"hello";
-    hasher.update(input);
-    println!("{:x}", hasher.clone().finalize());
-    hasher.update(input);
-    println!("{:x}", hasher.finalize());
-    let mut hasher = Sha256::new();
-    let input = b"hellohello";
-    hasher.update(input);
-    println!("{:x}", hasher.finalize());
     let mut ps: PeerState = PeerState {
         peer_map: HashMap::new(),
         peer_vec: Vec::new(),
@@ -497,6 +488,13 @@ impl Content {
             if i.bytes_complete == i.eof {
                 //EOF if the sha matches its done,
                 //not needed here then
+                let mut hasher = Sha256::new();
+                io::copy(&mut i.file, &mut hasher).ok();
+                let hash = format!("{:x}", hasher.finalize());
+                println!("{} sha256sum", hash);
+                if hash != i.id.to_lowercase() {
+                    error!("hash doesnt mattch!");
+                };
                 info!("{0} finished ", i.id);
                 println!("{0} finished ", i.id);
                 let path = "./incoming/".to_owned() + &i.id;
