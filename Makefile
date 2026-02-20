@@ -6,6 +6,6 @@ release:
 	cargo build --release
 
 check:
-	cargo check
+	cargo check 
 
 all: check release debug
