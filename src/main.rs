@@ -355,27 +355,19 @@ impl PleaseSendContent {
         let file: &File;
         let file_: File;
         let mut message_out: Vec<Message> = Vec::new();
+        if self.offset == 0 || (rand::thread_rng().gen::<u32>() % 37) == 0 {
+            message_out.append(&mut InboundState::send_transfer_peers(
+                &self.id,
+                &inbound_states,
+            ));
+        }
         if inbound_states.contains_key(&self.id) {
             let i = inbound_states.get_mut(&self.id).unwrap();
             i.peers.insert(src);
-
-            // this information should be sasved and sent even after a transfer
-            if (rand::thread_rng().gen::<u32>() % 37) == 0 {
-                message_out.push(Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
-                    id: self.id.to_owned(),
-                    peers: i.peers.clone(),
-                }));
-            }
-            // don't proceed to try to send out a file we're downloading even if we have it, as thats probably some testing situatoin not a real world situation
-            //                push MaybeTheyHaveSome
-
-            message_out.push(Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
-                id: self.id.to_owned(),
-                peers: i.peers.clone(),
-            }));
+            // don't proceed to try to send out a file we're downloading even if we have it, as thats probably some testing situation not a real world situation
             return message_out;
-        } else {
-            // TODO we should have saved our peer list near the file to share with othhers
+        }
+        {
             match File::open(&self.id) {
                 Ok(_r) => {
                     file_ = _r;
@@ -398,12 +390,13 @@ impl PleaseSendContent {
         let mut buf = vec![0; length];
         length = file.read_at(&mut buf, self.offset as u64).unwrap();
         let (content, _) = buf.split_at(length);
-        return vec![Message::Content(Content {
+        message_out.push(Message::Content(Content {
             id: self.id.clone(),
             offset: self.offset,
             base64: general_purpose::STANDARD.encode(content),
             eof: Some(file.metadata().unwrap().len() as usize),
-        })];
+        }));
+        return message_out;
     }
 }
 
@@ -495,6 +488,7 @@ impl Content {
                     let path = "./incoming/".to_owned() + &i.id;
                     let new_path = "./".to_owned() + &i.id;
                     fs::rename(path, new_path).unwrap();
+                    i.save_transfer_peers();
                     inbound_states.remove(&self.id);
                 } else {
                     error!("hash doesnt match!");
@@ -600,6 +594,44 @@ impl InboundState {
         for sa in some_peers {
             ps.socket.send_to(&message_out_bytes, sa).ok();
         }
+    }
+    fn save_transfer_peers(&self) -> () {
+        debug!("saving inbound state peers");
+        fs::create_dir("./metadata").ok();
+        let filename = "./metadata/".to_owned() + &self.id + ".json";
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(filename)
+            .unwrap()
+            .write_all(&serde_json::to_vec_pretty(&self.peers).unwrap())
+            .ok();
+    }
+    fn send_transfer_peers(
+        id: &String,
+        inbound_states: &HashMap<String, InboundState>,
+    ) -> Vec<Message> {
+        let peers_to_send: &mut HashSet<SocketAddr> = &mut HashSet::new();
+        if inbound_states.contains_key(&id.clone()) {
+            let i = inbound_states.get(&id.clone()).unwrap();
+            peers_to_send.extend(i.peers.clone());
+        }
+        let filename = "./metadata/".to_owned() + &id + ".json";
+        let file = OpenOptions::new().read(true).open(filename);
+        if file.as_ref().is_ok() && file.as_ref().unwrap().metadata().unwrap().len() > 0 {
+            let json: Vec<SocketAddr> = serde_json::from_reader(&file.unwrap()).unwrap();
+            peers_to_send.extend(json);
+        }
+        debug!("{} might send peers", id);
+        if peers_to_send.len() > 0 {
+            debug!("{} sending peers", id);
+            return vec![Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
+                id: id.to_owned(),
+                peers: peers_to_send.clone(),
+            })];
+        }
+        return vec![];
     }
 }
 
