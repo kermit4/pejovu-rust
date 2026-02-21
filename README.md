@@ -37,7 +37,6 @@ or info/warn log levels
 - 
 - CLI commands  / API, run as a daemon?  do we want each app speaking the protocol or using a daemon("node")?
 - mplayer seekable streams.   cli search.    
-- strace of the release build shows the peers.json loads one byte at a time. thats odd, understand why in case there are larger JSON files ever
 - actually store sources for MaybeTheyHaveSome outside of just current transfers
 - always MaybeTheyHaveSome for block 0 requests if any known
 - should be some delay if a hash doesnt match so it doest loop forever eating bandwidth

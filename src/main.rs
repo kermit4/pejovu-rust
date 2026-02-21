@@ -7,8 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::io::{self, Seek, SeekFrom};
+use std::io::{self, BufReader, BufWriter, Seek, SeekFrom, Write};
 //use std::convert::TryInto;
 use std::env;
 //use std::fmt;
@@ -613,14 +612,14 @@ impl InboundState {
 
         let peers: &mut HashSet<SocketAddr> = &mut HashSet::new();
         if file.metadata().unwrap().len() > 0 {
-            let json: serde_json::Value = serde_json::from_reader(&file).unwrap();
+            let json: serde_json::Value = serde_json::from_reader(BufReader::new(&file)).unwrap();
             let loaded_peers: HashSet<SocketAddr> =
                 serde_json::from_value(json["Peers"].clone()).unwrap();
             peers.extend(loaded_peers);
         }
         if peers.insert(*src) {
             file.seek(SeekFrom::Start(0)).ok();
-            serde_json::to_writer_pretty(file, &json!({"Peers":&peers})).unwrap();
+            serde_json::to_writer_pretty(BufWriter::new(file), &json!({"Peers":&peers})).unwrap();
         }
         if peers.len() > 1 {
             return vec![Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
