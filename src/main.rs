@@ -53,7 +53,6 @@ impl PeerState {
         for ifaddr in addrs {
             match ifaddr.address {
                 Some(address) => {
-                    println!("interface {} address {}", ifaddr.interface_name, address);
                     match address.as_sockaddr_in() {
                         Some(addr) => {
                             let mut sa = SocketAddr::from(*addr);
@@ -74,7 +73,6 @@ impl PeerState {
             }
             match ifaddr.broadcast {
                 Some(address) => {
-                    println!("interface {} address {}", ifaddr.interface_name, address);
                     match address.as_sockaddr_in() {
                         Some(addr) => {
                             let mut sa = SocketAddr::from(*addr);
@@ -190,6 +188,7 @@ fn main() -> Result<(), std::io::Error> {
         );
     }
     fs::create_dir("./shared").ok();
+    fs::create_dir("./metadata").ok();
     std::env::set_current_dir("./shared").unwrap();
     ps.load_peers();
     let mut args = env::args();
@@ -629,7 +628,6 @@ impl InboundState {
     }
     fn save_transfer_peers(&self) -> () {
         debug!("saving inbound state peers");
-        fs::create_dir("./metadata").ok();
         let filename = "./metadata/".to_owned() + &self.id + ".json";
         OpenOptions::new()
             .create(true)
