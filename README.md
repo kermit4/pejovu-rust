@@ -20,7 +20,6 @@ or info/warn log levels
 
 # TODO
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere .. https://dasl.ing/ ?  blake3?
-- some way to not be used as a DDOS as people can spoof their IPs in a request for peers or contont
 - streaming (files that grow after they're started.. with a goal that someone streaming video to millions only needs enough bandwidth to send out one copy, live, with little delay.  Multicast, as real multicast never caught on on the internet sadly.).. i think the code is there, it just needs to say to not stop, infinite EOF, or just make eof optional..as all fields should be
 
 - maybe replies just include the original request but note that it is a reply, so cookies and all data are there even if not used by replier, rather than separate message types? this would be less code?
