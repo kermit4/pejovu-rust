@@ -21,3 +21,6 @@ chrono =   ">=0.0.0"
 getifaddrs =   ">=0.0.0"
 nix =   { version = ">=0.0.0" , features = ["net"] }
 #blake3 = "=1.8.2"
+snow =   "=0.9.3"
+serde_with = { version = "3.0", features = ["base64"] }
+time-core = "=0.1.0"

@@ -1,6 +1,6 @@
 This implements everything in spotted and listed in the https://github.com/kermit4/cjp2p protocol repo.
 
-This will make available any files in the directory ./shared  It will ignore any requests for anything that has a / or \ in it, so as long as Rust's JSON parser (Serde) doesn't have an exploit, it seems safe to leave running.
+This will make available any files in the directory ./shared  It will ignore any requests for anything that has a / or \ in it.
 
 To request a file, run with the content_id as an arguement.  It will be placed in ./shared/incoming/ until it is complete, then moved to ./shared
 
@@ -15,6 +15,8 @@ i.e.
 # hints
 
 try running with RUST_BACKTRACE=1 RUST_LOG=debug ./target/debug/cjp2p
+
+try make demo to get 1GB in 1MB chunks
 
 or info/warn log levels
 
@@ -33,5 +35,8 @@ or info/warn log levels
 - CLI commands  / API, run as a daemon?  do we want each app speaking the protocol or using a daemon("node")?
 - mplayer seekable streams.   cli search.    
 - should be some delay if a hash doesnt match so it doest loop forever eating bandwidth
-- make this a rust crate?
+- make this a rust crate? libcjp
 - how would end users best interact? through a browser? how about sending or streaming
+- stop using empty strings or zeros to mean unset and do it the Rusty way with Option
+- probably less unwrap and more questoin marks
++- downloads assume it has the always returned key already.when it just started...and crashes
