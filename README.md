@@ -37,6 +37,7 @@ or info/warn log levels
 - should be some delay if a hash doesnt match so it doest loop forever eating bandwidth
 - make this a rust crate? libcjp
 - how would end users best interact? through a browser? how about sending or streaming
-- stop using empty strings or zeros to mean unset and do it the Rusty way with Option
 - probably less unwrap and more questoin marks
 - encryption? snow crate / noise protocol 
+- age peers - at each probe, or maybe on a timer, add delay to the stored amount
+- on any NEW MaybeTheyHaveSome peers try the new ones
