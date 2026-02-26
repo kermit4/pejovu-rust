@@ -157,6 +157,11 @@ impl PeerState {
         }
     }
 
+    fn age(&mut self) -> () {
+        for p in self.peer_map.iter_mut() {
+            p.1.delay+=p.1.delay/1000;
+        }
+    }
     fn sort(&mut self) -> () {
         let mut peers: Vec<_> = self
             .peer_map
@@ -178,7 +183,8 @@ impl PeerState {
         }
     }
     fn save_peers(&self) -> () {
-        debug!("saving peers");
+        debug!("saving peers"); 
+        // not really sure how many, if any, of these peers or fields should be saved, or just a list of host:ips, but for the few users (1) of this so far, might as well save it all
         let mut peers_to_save: Vec<(SocketAddr, PeerInfo)> = Vec::new();
         for i in 0.. cmp::min(self.peer_vec.len(), 99) {
             peers_to_save.push((self.peer_vec[i],self.peer_map[&self.peer_vec[i]].clone()))
@@ -798,6 +804,7 @@ impl InboundState {
 
 fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
     ps.sort();
+    ps.age();
     if Utc::now().second() / 3 + (Utc::now().minute() % 5) == 0 {
         ps.save_peers();
     }
