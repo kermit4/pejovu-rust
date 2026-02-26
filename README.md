@@ -20,6 +20,8 @@ try make demo to get 1GB in 1MB chunks
 
 or info/warn log levels
 
+the debug build won't care if you dont send AlwaysReturned, so easier for testing, but the debug build is slower.
+
 # TODO
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere .. https://dasl.ing/ ?  blake3?
 - streaming (files that grow after they're started.. with a goal that someone streaming video to millions only needs enough bandwidth to send out one copy, live, with little delay.  Multicast, as real multicast never caught on on the internet sadly.).. i think the code is there, it just needs to say to not stop, infinite EOF, or just make eof optional..as all fields should be
@@ -41,3 +43,4 @@ or info/warn log levels
 - encryption? snow crate / noise protocol 
 - age peers - at each probe, or maybe on a timer, add delay to the stored amount
 - on any NEW MaybeTheyHaveSome peers try the new ones
+- it could track hosts by public key not host port to get rid of the issuew with these weird rolling port nats
