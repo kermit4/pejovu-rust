@@ -56,7 +56,7 @@ impl PeerInfo {
 }
 struct PeerState {
     peer_map: HashMap<SocketAddr, PeerInfo>,
-    peer_vec: Vec<SocketAddr>, 
+    peer_vec: Vec<SocketAddr>,
     socket: UdpSocket,
     boot: Instant,
     keypair: Keypair,
@@ -159,7 +159,7 @@ impl PeerState {
 
     fn age(&mut self) -> () {
         for p in self.peer_map.iter_mut() {
-            p.1.delay+=p.1.delay/1000;
+            p.1.delay += p.1.delay / 1000;
         }
     }
     fn sort(&mut self) -> () {
@@ -183,13 +183,12 @@ impl PeerState {
         }
     }
     fn save_peers(&self) -> () {
-        debug!("saving peers"); 
+        debug!("saving peers");
         // not really sure how many, if any, of these peers or fields should be saved, or just a list of host:ips, but for the few users (1) of this so far, might as well save it all
         let mut peers_to_save: Vec<(SocketAddr, PeerInfo)> = Vec::new();
-        for i in 0.. cmp::min(self.peer_vec.len(), 99) {
-            peers_to_save.push((self.peer_vec[i],self.peer_map[&self.peer_vec[i]].clone()))
+        for i in 0..cmp::min(self.peer_vec.len(), 99) {
+            peers_to_save.push((self.peer_vec[i], self.peer_map[&self.peer_vec[i]].clone()))
         }
-            
 
         OpenOptions::new()
             .create(true)
@@ -197,9 +196,7 @@ impl PeerState {
             .truncate(true)
             .open("peers.v2.json")
             .unwrap()
-            .write_all(
-                    &serde_json::to_vec_pretty(&peers_to_save).unwrap()
-            )
+            .write_all(&serde_json::to_vec_pretty(&peers_to_save).unwrap())
             .ok();
     }
 
@@ -258,8 +255,8 @@ fn main() -> Result<(), std::io::Error> {
     let mut last_maintenance = Instant::now() - Duration::new(9999, 0);
     loop {
         if last_maintenance.elapsed() > Duration::from_secs(1) {
-            last_maintenance = Instant::now();
             maintenance(&mut inbound_states, &mut ps);
+            last_maintenance = Instant::now();
         }
         let mut buf = [0; 0x10000];
         let (message_len, src) = match ps.socket.recv_from(&mut buf) {
@@ -325,7 +322,7 @@ fn main() -> Result<(), std::io::Error> {
                 Message::Content(t) => t.receive_content(&mut inbound_states, src, &mut ps),
                 Message::ReturnedMessage(t) => t.update_round_trip_time(&mut ps, src),
                 Message::MaybeTheyHaveSome(t) => {
-                    t.add_content_peer_suggestions(&mut inbound_states)
+                    t.add_content_peer_suggestions(&mut ps, &mut inbound_states)
                 }
                 Message::AlwaysReturned(t) => {
                     their_key_passed = t.check_key(&mut ps, src);
@@ -345,7 +342,13 @@ fn main() -> Result<(), std::io::Error> {
         if message_out.len() == 0 {
             continue;
         }
-        if !their_key_passed {
+        let message_out_bytes = serde_json::to_vec(&message_out).unwrap();
+        // lets not be used for a spoofed source IP DOS, but, many DNS lookups can be too, so we
+        // can reply a little without knowing the source IP is right
+        if !their_key_passed
+            && ((message_len + 28) * 2 / message_out_bytes.len()) as f64
+                > rand::thread_rng().gen::<f64>()
+        {
             info!("supplying key to {}", src);
             message_out = vec![
                 serde_json::to_value(PleaseAlwaysReturnThisMessage::send_key(&ps, src)).unwrap(),
@@ -363,7 +366,6 @@ fn main() -> Result<(), std::io::Error> {
                 )
             }
         }
-        let message_out_bytes = serde_json::to_vec(&message_out).unwrap();
         debug!(
             "sending message {:?} to {src}",
             String::from_utf8_lossy(&message_out_bytes)
@@ -601,20 +603,8 @@ impl Content {
                         continue;
                     }
                     debug!("growing window for {0}", i.id);
-
-                    let mut message_out: Vec<Value> = Vec::new();
-                    for m in i.request_next_block() {
-                        message_out.push(serde_json::to_value(m).unwrap());
-                    }
-                    message_out.extend(ps.always_returned(src));
-
+                    i.request_blocks(ps, HashSet::from([src]));
                     i.next_block += 1;
-                    let message_out_bytes: Vec<u8> = serde_json::to_vec(&message_out).unwrap();
-                    debug!(
-                        "sending message {:?} to {src}",
-                        String::from_utf8_lossy(&message_out_bytes)
-                    );
-                    ps.socket.send_to(&message_out_bytes, src).ok();
                     break;
                 }
             }
@@ -841,13 +831,19 @@ struct MaybeTheyHaveSome {
 impl MaybeTheyHaveSome {
     fn add_content_peer_suggestions(
         self,
+        ps: &mut PeerState,
         inbound_states: &mut HashMap<String, InboundState>,
     ) -> Vec<Message> {
         if !inbound_states.contains_key(&self.id) {
             return vec![];
         }
         let i = inbound_states.get_mut(&self.id).unwrap();
-        i.peers.extend(self.peers);
+        for p in self.peers {
+            if i.peers.insert(p) {
+                // new possible source? try it
+                i.request_blocks(ps, HashSet::from([p]));
+            }
+        }
         return vec![];
     }
 }
