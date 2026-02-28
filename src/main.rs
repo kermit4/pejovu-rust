@@ -129,8 +129,9 @@ impl PeerState {
             peer_info.delay = peer_info.delay.saturating_add(peer_info.delay / 20);
             let mut message_out: Vec<Value> = Vec::new();
             message_out
-                .push(serde_json::to_value(Message::PleaseSendPeers(PleaseSendPeers {})).unwrap()); // let people know im here
-                                                                                                    // im not sure if anyone cares about all this info from completely random contacts
+                .push(serde_json::to_value(Message::PleaseSendPeers(PleaseSendPeers {})).unwrap());
+            // let people know im here
+            // im not sure if anyone cares about all this info from completely random contacts
             message_out.push(
                 serde_json::to_value(PleaseAlwaysReturnThisMessage::send_key(&self, sa)).unwrap(),
             );
@@ -354,6 +355,7 @@ fn main() -> Result<(), std::io::Error> {
         if message_out.len() == 0 {
             continue;
         }
+        message_out.extend(ps.always_returned(src));
         let mut message_out_bytes;
         let mut ratio;
         // 20 is IP header, 8 is UDP header
@@ -362,7 +364,6 @@ fn main() -> Result<(), std::io::Error> {
             ratio = // 20 is IP header, 8 is UDP header
             (message_out_bytes.len() as f64 + 20.0 + 8.0) / (message_len as f64 + 20.0 + 8.0);
             trace!("ratio: {ratio}");
-
             message_out.len() > 0 && !their_key_passed && ratio > 2.5
         } {
             debug!("{ratio}x ratio: dropping part of response to unverified source IP, so that you are not used as a flood/stressor/DDOS. {:?} {:?}",
@@ -374,7 +375,6 @@ fn main() -> Result<(), std::io::Error> {
                 warn!("and none none left due to ratio!");
             }
         }
-        trace!("ratio: {ratio}");
         if message_out.len() == 0 {
             continue;
         }
@@ -412,6 +412,7 @@ impl AlwaysReturned {
             .get(&src)
             .unwrap()
             .anti_ddos_key_to_expect_from_them;
+        debug!("verified key for {src} is {correct_key}");
         return correct_key == self.key;
     }
 }
