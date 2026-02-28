@@ -126,7 +126,7 @@ impl PeerState {
     fn probe(&mut self) -> () {
         for sa in self.best_peers(10, 3) {
             let peer_info = self.peer_map.get_mut(&sa).unwrap();
-            peer_info.delay = peer_info.delay.saturating_add(peer_info.delay / 1000);
+            peer_info.delay = peer_info.delay.saturating_add(peer_info.delay / 20);
             let mut message_out: Vec<Value> = Vec::new();
             message_out
                 .push(serde_json::to_value(Message::PleaseSendPeers(PleaseSendPeers {})).unwrap()); // let people know im here
