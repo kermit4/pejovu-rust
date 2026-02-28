@@ -30,7 +30,7 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - 
 - this should be like a daemon, runnin locally, things can communate through it, rather than speak it directly?  localhost URLs?
 - 
-- streaming live cam of somethin is a good test case.. the sky .. ffmpeg -i /dev/video2 o.mkv .. 
+- streaming live cam of something is a good test case.. the sky .. ffmpeg -i /dev/video2 o.mkv .. 
 - 
 - lossy real time streams? it would require knowing the media's container block boundaries
 - 
@@ -44,3 +44,5 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - it could track hosts by public key not host port to get rid of the issuew with these weird rolling port nats
 - if content exists, but there is no AlwaysReply key, send one byte, so a big search can at least ind it even if it doesnt have the key
 - worry less about DOS stuff right now, deal with that later, make it easy to use right now
+- age delay when probed for delay, not in maintenance
+- dont have debug build behave differently but make sure all types can reply small amounts so other than efficient transefrs, it doesnt seed to store that key for all hosts nor have two RTTs for saerch andd peer discovery
