@@ -42,8 +42,6 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - probably less unwrap and more questoin marks
 - encryption? snow crate / noise protocol 
 - it could track hosts by public key not host port to get rid of the issuew with these weird rolling port nats
-- age delay when probed for delay, not in maintenance
 - rename anti_ddos and their_key_matched to not_spoofed_ip
 - rename anti_ddos and their_key_matched to not_spoofed_ip
 - send peers when asking for them? why not, be nice, save a RTT?
-- age overflows with my exponettian forever appraoch

@@ -123,11 +123,14 @@ impl PeerState {
             self.socket.send_to(&message_out_bytes, sa).ok();
         }
     }
-    fn probe(&self) -> () {
+    fn probe(&mut self) -> () {
         for sa in self.best_peers(10, 3) {
+            let peer_info = self.peer_map.get_mut(&sa).unwrap();
+            peer_info.delay = peer_info.delay.saturating_add(peer_info.delay / 1000);
             let mut message_out: Vec<Value> = Vec::new();
             message_out
                 .push(serde_json::to_value(Message::PleaseSendPeers(PleaseSendPeers {})).unwrap()); // let people know im here
+                                                                                                    // im not sure if anyone cares about all this info from completely random contacts
             message_out.push(
                 serde_json::to_value(PleaseAlwaysReturnThisMessage::send_key(&self, sa)).unwrap(),
             );
@@ -157,11 +160,6 @@ impl PeerState {
         }
     }
 
-    fn age(&mut self) -> () {
-        for p in self.peer_map.iter_mut() {
-            p.1.delay += p.1.delay / 1000;
-        }
-    }
     fn sort(&mut self) -> () {
         let mut peers: Vec<_> = self
             .peer_map
@@ -836,7 +834,6 @@ impl InboundState {
 
 fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut PeerState) -> () {
     ps.sort();
-    ps.age();
     if Utc::now().second() / 3 + (Utc::now().minute() % 5) == 0 {
         ps.save_peers();
     }
