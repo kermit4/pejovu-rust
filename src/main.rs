@@ -288,9 +288,7 @@ fn main() -> Result<(), std::io::Error> {
         // always know the structure of,
         let mut message_out: Vec<Value> = Vec::new();
         debug!("received messages {:?} from {src}", messages.len());
-        let mut their_key_passed = false; // Ruby and BASH clients dont support
-                                          // this yet and will just loop forever
-                                          // on the short content replies
+        let mut their_key_passed = false; 
         for message_in in &messages {
             match &message_in["AlwaysReturned"] {
                 Value::Null => (),
