@@ -235,6 +235,7 @@ fn main() -> Result<(), std::io::Error> {
             .generate_keypair()
             .unwrap(),
     };
+    // ugly    println!("your public ed25519 key for this session is:  {:?}",ps.keypair.public);
 
     ps.socket.set_broadcast(true).ok();
     for p in ["148.71.89.128:24254", "159.69.54.127:24254"] {
@@ -277,7 +278,7 @@ fn main() -> Result<(), std::io::Error> {
                 continue;
             }
         };
-        debug!(
+        trace!(
             "incoming message {:?} from {src}",
             String::from_utf8_lossy(message_in_bytes)
         );
@@ -289,7 +290,23 @@ fn main() -> Result<(), std::io::Error> {
         // always know the structure of,
         let mut message_out: Vec<Value> = Vec::new();
         debug!("received messages {:?} from {src}", messages.len());
-        let mut their_key_passed = cfg!(debug_assertions);
+        let mut their_key_passed = false; // Ruby and BASH clients dont support
+                                          // this yet and will just loop forever
+                                          // on the short content replies
+        for message_in in &messages {
+            match &message_in["AlwaysReturned"] {
+                Value::Null => (),
+                v => match serde_json::from_value(v.clone()) {
+                    Ok(t) => match t {
+                        Message::AlwaysReturned(t) => their_key_passed = t.check_key(&mut ps, src),
+
+                        _ => (),
+                    },
+                    _ => (),
+                },
+            }
+        }
+
         for message_in in messages {
             if (message_in["PleaseAlwaysReturnThisMessage"]) != Value::Null {
                 PleaseAlwaysReturnThisMessage::save_key(
@@ -316,18 +333,17 @@ fn main() -> Result<(), std::io::Error> {
                 }
             };
             let reply = match message_in_enum {
-                Message::PleaseSendPeers(t) => t.send_peers(&ps),
+                Message::PleaseSendPeers(t) => t.send_peers(&ps, their_key_passed, src),
                 Message::Peers(t) => t.receive_peers(&mut ps),
-                Message::PleaseSendContent(t) => t.send_content(&mut inbound_states, src),
+                Message::PleaseSendContent(t) => {
+                    t.send_content(&mut inbound_states, src, their_key_passed, &ps)
+                }
                 Message::Content(t) => t.receive_content(&mut inbound_states, src, &mut ps),
                 Message::ReturnedMessage(t) => t.update_round_trip_time(&mut ps, src),
                 Message::MaybeTheyHaveSome(t) => {
                     t.add_content_peer_suggestions(&mut ps, &mut inbound_states)
                 }
-                Message::AlwaysReturned(t) => {
-                    their_key_passed = t.check_key(&mut ps, src);
-                    vec![]
-                }
+                Message::AlwaysReturned(_) => vec![], // handled before htis loop
                 Message::MyPublicKey(t) => t.save_public_key(&mut ps, src),
                 // TODO something to prevent someone from just inserting a different key into a communication path
                 _ => {
@@ -342,38 +358,42 @@ fn main() -> Result<(), std::io::Error> {
         if message_out.len() == 0 {
             continue;
         }
-        let message_out_bytes = serde_json::to_vec(&message_out).unwrap();
-        // lets not be used for a spoofed source IP DOS, but, many DNS lookups can be too, so we
-        // can reply a little without knowing the source IP is right
-        if !their_key_passed
-            && ((message_len + 28) * 2 / message_out_bytes.len()) as f64
-                > rand::thread_rng().gen::<f64>()
-        {
-            info!("supplying key to {}", src);
-            message_out = vec![
-                serde_json::to_value(PleaseAlwaysReturnThisMessage::send_key(&ps, src)).unwrap(),
-            ];
-        } else {
-            if !their_key_passed { message_out.push(
-                serde_json::to_value(PleaseAlwaysReturnThisMessage::send_key(&ps, src)).unwrap(),
-            );
-            }
-            message_out.extend(ps.always_returned(src));
-            if (rand::thread_rng().gen::<u32>() % 73) == 0 {
-                message_out.push(
-                    serde_json::to_value(Message::PleaseReturnThisMessage(
-                        PleaseReturnThisMessage {
-                            sent_at: ps.boot.elapsed().as_secs_f64(),
-                        },
-                    ))
-                    .unwrap(),
-                )
+        let mut message_out_bytes = serde_json::to_vec(&message_out).unwrap();
+        let mut ratio =
+            (message_out_bytes.len() as f64 + 20.0 + 8.0) / (message_len as f64 + 20.0 + 8.0);
+        // 20 is IP header, 8 is UDP header
+        trace!("ratio: {ratio}");
+        while {
+            message_out_bytes = serde_json::to_vec(&message_out).unwrap();
+            ratio = // 20 is IP header, 8 is UDP header
+            (message_out_bytes.len() as f64 + 20.0 + 8.0) / (message_len as f64 + 20.0 + 8.0);
+
+            message_out.len() > 0 && !their_key_passed && ratio > 2.5
+        } {
+            debug!("{ratio}x ratio: dropping part of response to unverified source IP, so that you are not used as a flood/stressor/DDOS. {:?} {:?}",
+                String::from_utf8_lossy(&message_in_bytes),
+                String::from_utf8_lossy(&message_out_bytes)
+                );
+            message_out.pop();
+            if message_out.len() == 0 {
+                warn!("and none none left due to ratio!");
             }
         }
-        debug!(
-            "sending message {:?} to {src}",
-            String::from_utf8_lossy(&message_out_bytes)
-        );
+        trace!("ratio: {ratio}");
+        if message_out.len() == 0 {
+            continue;
+        }
+        if their_key_passed {
+            trace!(
+                "sending message {:?} to {src}",
+                String::from_utf8_lossy(&message_out_bytes)
+            );
+        } else {
+            trace!(
+                "sending message {:?} to {src} \x1b[7mWITHOUT A KEY\x1b[m",
+                String::from_utf8_lossy(&message_out_bytes)
+            );
+        }
         match ps.socket.send_to(&message_out_bytes, src) {
             Ok(s) => trace!("sent {s}"),
             Err(e) => warn!("failed to send {0} {e}", message_out_bytes.len()),
@@ -429,8 +449,8 @@ impl PleaseAlwaysReturnThisMessage {
 #[derive(Serialize, Deserialize)]
 struct PleaseSendPeers {}
 impl PleaseSendPeers {
-    fn send_peers(&self, ps: &PeerState) -> Vec<Message> {
-        let p = ps.best_peers(50, 6);
+    fn send_peers(&self, ps: &PeerState, their_key_passed: bool, src: SocketAddr) -> Vec<Message> {
+        let p = ps.best_peers(2 + 45 * their_key_passed as i32, 6);
         trace!(
             "sending {:?}/{:?} peers {:?}",
             p.len(),
@@ -438,10 +458,11 @@ impl PleaseSendPeers {
             p
         );
         debug!("sending {:?}/{:?} peers", p.len(), ps.peer_map.len());
-        return vec![Message::Peers(Peers {
-            //    how_to_add_new_fields_without_error:Some("".to_string()),
-            peers: p,
-        })];
+        let mut message_out = vec![Message::Peers(Peers { peers: p })];
+        if !their_key_passed {
+            message_out.push(PleaseAlwaysReturnThisMessage::send_key(&ps, src));
+        }
+        return message_out;
     }
 }
 
@@ -481,6 +502,8 @@ impl PleaseSendContent {
         &self,
         inbound_states: &mut HashMap<String, InboundState>,
         src: SocketAddr,
+        their_key_passed: bool,
+        ps: &PeerState,
     ) -> Vec<Message> {
         if self.id.find("/") != None || self.id.find("\\") != None {
             return vec![];
@@ -489,54 +512,65 @@ impl PleaseSendContent {
         if length > 0xa000 {
             length = 0xa000;
         }
+        if !their_key_passed {
+            length = 1; // just to show i have some in a search as they'll have the key next request
+            if (rand::thread_rng().gen::<u32>() % 31) == 0 {
+                return vec![]; // in case its a client that completel doesn't support their_key_passed so
+                               // it doesn't just loop asking for the same block forever
+            }
+        }
 
-        let file: &File;
-        let file_: File;
         let mut message_out: Vec<Message> = Vec::new();
         if inbound_states.contains_key(&self.id) {
             let i = inbound_states.get_mut(&self.id).unwrap();
             i.peers.insert(src);
-            if self.offset == 0 || (rand::thread_rng().gen::<u32>() % 37) == 0 {
-                message_out.append(&mut i.send_transfer_peers());
-            }
-
+            message_out.append(&mut i.send_transfer_peers(their_key_passed));
             // don't proceed to try to send out a file we're downloading even if we have it, as thats probably some testing situation not a real world situation
+            if !their_key_passed {
+                message_out.push(PleaseAlwaysReturnThisMessage::send_key(&ps, src));
+            }
             return message_out;
         }
-        if self.offset == 0 || (rand::thread_rng().gen::<u32>() % 37) == 0 {
-            message_out.append(&mut InboundState::send_transfer_peers_from_disk(
-                &self.id, &src,
-            ));
-        }
-        {
-            match File::open(&self.id) {
-                Ok(_r) => {
-                    file_ = _r;
-                    file = &file_;
+        match File::open(&self.id) {
+            Err(_) => {
+                if !their_key_passed {
+                    message_out.push(PleaseAlwaysReturnThisMessage::send_key(&ps, src));
                 }
+                return message_out;
+            }
+            Ok(file) => {
                 // TODO even if we dont have and arent downloading the file, maybe we should be nice and keep track
                 // of who's been looking and send them MaybeTheyHaveSome ..they would really
                 // appreciate it i'm sure, and costs us very little
-                _ => return message_out,
+
+                debug!(
+                    "going to send {:?} at {:?} to {:?}",
+                    self.id,
+                    self.offset / BLOCK_SIZE!(),
+                    src
+                );
+
+                let mut buf = vec![0; length];
+                length = file.read_at(&mut buf, self.offset as u64).unwrap();
+                let (content, _) = buf.split_at(length);
+                message_out.push(Message::Content(Content {
+                    id: self.id.clone(),
+                    offset: self.offset,
+                    base64: content.to_vec(),
+                    eof: Some(file.metadata().unwrap().len() as usize),
+                }));
             }
         }
-
-        debug!(
-            "going to send {:?} at {:?} to {:?}",
-            self.id,
-            self.offset / BLOCK_SIZE!(),
-            src
-        );
-
-        let mut buf = vec![0; length];
-        length = file.read_at(&mut buf, self.offset as u64).unwrap();
-        let (content, _) = buf.split_at(length);
-        message_out.push(Message::Content(Content {
-            id: self.id.clone(),
-            offset: self.offset,
-            base64: content.to_vec(),
-            eof: Some(file.metadata().unwrap().len() as usize),
-        }));
+        if message_out.len() == 0 || their_key_passed {
+            message_out.append(&mut InboundState::send_transfer_peers_from_disk(
+                &self.id,
+                &src,
+                their_key_passed,
+            ));
+        }
+        if message_out.len() > 0 && !their_key_passed {
+            message_out.push(PleaseAlwaysReturnThisMessage::send_key(&ps, src));
+        }
         return message_out;
     }
 }
@@ -588,18 +622,15 @@ impl Content {
                     info!("dup {block_number}");
                     return vec![];
                 }
-                i.file.write_at(&self.base64, self.offset as u64).unwrap();
                 if self.base64.len() == BLOCK_SIZE!()
                     || self.base64.len() + block_number * BLOCK_SIZE!() == i.eof
                 {
-                    // no reason someone would send a short block, but, just in case
-                    // i think this is a bug that will ignore the last block until the rest is done,
-                    // unless its the usual block size, but that last block could grow so thats why
+                    i.file.write_at(&self.base64, self.offset as u64).unwrap();
                     i.bytes_complete += self.base64.len();
                     i.bitmap.set(block_number, true);
+                    i.next_block += 1;
                 }
                 message_out = i.request_next_block();
-                i.next_block += 1;
             }
             if (rand::thread_rng().gen::<u32>() % 101) == 0 {
                 for (_, i) in inbound_states.iter_mut() {
@@ -717,11 +748,12 @@ impl InboundState {
             self.next_block * BLOCK_SIZE!()
         );
         self.last_activity = Instant::now();
-        return vec![Message::PleaseSendContent(PleaseSendContent {
+        let message_out = vec![Message::PleaseSendContent(PleaseSendContent {
             id: self.id.to_owned(),
             offset: self.next_block * BLOCK_SIZE!(),
             length: BLOCK_SIZE!(),
         })];
+        return message_out;
     }
     fn request_blocks(&mut self, ps: &mut PeerState, some_peers: HashSet<SocketAddr>) {
         for sa in some_peers {
@@ -758,7 +790,11 @@ impl InboundState {
             )
             .ok();
     }
-    fn send_transfer_peers_from_disk(id: &String, src: &SocketAddr) -> Vec<Message> {
+    fn send_transfer_peers_from_disk(
+        id: &String,
+        src: &SocketAddr,
+        their_key_passed: bool,
+    ) -> Vec<Message> {
         let filename = "./metadata/".to_owned() + &id + ".json";
         let mut file = OpenOptions::new()
             .create(true)
@@ -779,19 +815,22 @@ impl InboundState {
             file.seek(SeekFrom::Start(0)).ok();
             serde_json::to_writer_pretty(BufWriter::new(file), &json!({"Peers":&peers})).unwrap();
         }
-        if peers.len() > 0 {
-            return vec![Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
-                id: id.to_owned(),
-                peers: peers.clone(),
-            })];
+        if peers.len() == 0 {
+            return vec![];
         }
-        return vec![];
+        let at_most = 3 + 45 * their_key_passed as usize;
+
+        return vec![Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
+            id: id.to_owned(),
+            peers: peers.iter().take(at_most).cloned().collect(),
+        })];
     }
-    fn send_transfer_peers(&self) -> Vec<Message> {
+    fn send_transfer_peers(&self, their_key_passed: bool) -> Vec<Message> {
         debug!("{} sending peers", self.id);
+        let at_most = 3 + 45 * their_key_passed as usize;
         return vec![Message::MaybeTheyHaveSome(MaybeTheyHaveSome {
             id: self.id.clone(),
-            peers: self.peers.clone(),
+            peers: self.peers.iter().take(at_most).cloned().collect(),
         })];
     }
 }
