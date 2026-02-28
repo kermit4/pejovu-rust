@@ -288,7 +288,7 @@ fn main() -> Result<(), std::io::Error> {
         // always know the structure of,
         let mut message_out: Vec<Value> = Vec::new();
         debug!("received messages {:?} from {src}", messages.len());
-        let mut their_key_passed = false; 
+        let mut their_key_passed = false;
         for message_in in &messages {
             match &message_in["AlwaysReturned"] {
                 Value::Null => (),
