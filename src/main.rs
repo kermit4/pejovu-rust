@@ -172,7 +172,7 @@ impl PeerState {
     }
 
     fn load_peers(&mut self) -> () {
-        let file = OpenOptions::new().read(true).open("peers.v2.json");
+        let file = OpenOptions::new().read(true).open("peers.v3.json");
         if file.as_ref().is_ok() && file.as_ref().unwrap().metadata().unwrap().len() > 0 {
             let json: Vec<(SocketAddr, PeerInfo)> =
                 serde_json::from_reader(&file.unwrap()).unwrap();
@@ -193,7 +193,7 @@ impl PeerState {
             .create(true)
             .write(true)
             .truncate(true)
-            .open("peers.v2.json")
+            .open("peers.v3.json")
             .unwrap()
             .write_all(&serde_json::to_vec_pretty(&peers_to_save).unwrap())
             .ok();
@@ -595,7 +595,6 @@ impl Content {
         let mut message_out;
         let i = inbound_states.get_mut(&self.id).unwrap();
         i.peers.insert(src);
-        i.last_activity = Instant::now();
         let block_number = self.offset / BLOCK_SIZE!();
         debug!(
             "\x1b[34mreceived block {:?} {:?} {:?} from {:?} window \x1b[7m{:}\x1b[m",
@@ -627,6 +626,12 @@ impl Content {
             self.base64.len() == BLOCK_SIZE!() || self.base64.len() + self.offset == i.eof;
         if good_block {
             if i.file.is_none() {
+                if i.last_activity > Instant::now() {
+                    // must be a delayed restart due to a failed hash
+                    warn!("delaying restart!");
+                    return vec![];
+                }
+                debug!("{}  opening file!", i.id);
                 i.file = Some(
                     OpenOptions::new()
                         .create(true)
@@ -644,6 +649,7 @@ impl Content {
             i.bytes_complete += self.base64.len();
             i.bitmap.set(block_number, true);
         }
+        i.last_activity = Instant::now();
         message_out = i.request_next_block();
         if good_block {
             i.next_block += 1;
@@ -676,10 +682,16 @@ impl Content {
                 i.save_transfer_peers();
                 inbound_states.remove(&self.id);
             } else {
-                error!("{} hash doesnt match! restarting", i.id);
+                error!(
+                    "{} hash doesnt match! restarting, after a large delay",
+                    i.id
+                );
                 i.bitmap.fill(false);
                 i.next_block = 0;
                 i.bytes_complete = 0;
+                i.last_activity = Instant::now() + Duration::new(999, 00);
+                i.file = None;
+                return vec![];
             };
         }
         if message_out.len() == 0 {
@@ -874,13 +886,15 @@ fn maintenance(inbound_states: &mut HashMap<String, InboundState>, ps: &mut Peer
             debug!("restarting {}", i.id);
             i.request_blocks(ps, i.peers.clone()); // resume (un-stall)
         }
-        debug!("searching for {}", i.id);
-        i.request_blocks(ps, ps.best_peers(50, 6));
-        break; // this is to see how slow it would be if it was streaming new 256k created in real
-               // time.  really this should handle many or all at once, but test how well that
-               // works with 10000 at once..first issue is open file handles.  2nd is excessive
-               // paccket loss trying to spark that many at once, so there needs to be some liimt,
-               // but more than one.
+        if i.last_activity <= Instant::now() {
+            debug!("searching for {}", i.id);
+            i.request_blocks(ps, ps.best_peers(50, 6));
+            break; // this is to see how slow it would be if it was streaming new 256k created in real
+                   // time.  really this should handle many or all at once, but test how well that
+                   // works with 10000 at once..first issue is open file handles.  2nd is excessive
+                   // paccket loss trying to spark that many at once, so there needs to be some liimt,
+                   // but more than one.
+        }
     }
 }
 

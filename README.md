@@ -36,10 +36,10 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - 
 - CLI commands  / API, run as a daemon?  do we want each app speaking the protocol or using a daemon("node")?
 - mplayer seekable streams.   cli search.    
-- should be some delay if a hash doesnt match so it doest loop forever eating bandwidth
 - make this a rust crate? libcjp
 - how would end users best interact? through a browser? how about sending or streaming
 - probably less unwrap and more questoin marks
 - encryption? snow crate / noise protocol 
 - it could track hosts by public key not host port to get rid of the issuew with these weird rolling port nats
 - send peers when asking for them? why not, be nice, save a RTT?
+- try again to move some inbound state stuff to the implementation of inbound state
