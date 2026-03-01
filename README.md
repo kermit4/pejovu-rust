@@ -16,11 +16,8 @@ i.e.
 
 try running with RUST_BACKTRACE=1 RUST_LOG=debug ./target/debug/cjp2p
 
-for fun try:
-
+for fun try: make demo, ^C when it seems done, and then
 ```
-make demo
-# ^C when it seems done, and then
 (cd shared
 cat $(cat                                                                                                                   562b168a64967fd64687664b987dd1c50c36d1532449bb4c385d683538c0bf03 )) |
 sha256sum    
