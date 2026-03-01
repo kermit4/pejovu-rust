@@ -15,6 +15,7 @@ i.e.
 # hints
 
 try running with RUST_BACKTRACE=1 RUST_LOG=debug ./target/debug/cjp2p
+or info/warn log levels
 
 for fun try: make demo, ^C when it seems done, and then
 ```
@@ -23,8 +24,6 @@ cat $(cat                                                                       
 sha256sum    
 # should be  6f5a06b0a8b83d66583a319bfa104393f5e52d2c017437a1b425e9275576500c
 ```
-
-or info/warn log levels
 
 # TODO
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere .. https://dasl.ing/ ?  blake3?
