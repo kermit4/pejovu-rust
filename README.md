@@ -47,3 +47,4 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - send peers when asking for them? why not, be nice, save a RTT?
 - something broke speed in the last few commits
 - mulitple parallel downloads of the non default 2nd layer block size, 256k, get a bit messy on the transfe, but thats not realyl a probem?
+- make demo needs ulimit, oops, change it to only open when started

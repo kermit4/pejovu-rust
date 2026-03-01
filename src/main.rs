@@ -587,82 +587,80 @@ impl Content {
             return vec![];
         }
         let mut message_out;
-        {
-            {
-                let i = inbound_states.get_mut(&self.id).unwrap();
-                i.peers.insert(src);
-                i.last_activity = Instant::now();
-                let block_number = self.offset / BLOCK_SIZE!();
-                debug!(
-                    "\x1b[34mreceived block {:?} {:?} {:?} from {:?} window \x1b[7m{:}\x1b[m",
-                    self.id,
-                    block_number,
-                    block_number * BLOCK_SIZE!(),
-                    src,
-                    i.next_block as i64 - block_number as i64
-                );
-                let this_eof = match self.eof {
-                    Some(n) => {
-                        debug!("got eof {:?}", n);
-                        n
-                    }
-                    None => self.offset + self.base64.len() + 1,
-                };
+        let i = inbound_states.get_mut(&self.id).unwrap();
+        i.peers.insert(src);
+        i.last_activity = Instant::now();
+        let block_number = self.offset / BLOCK_SIZE!();
+        debug!(
+            "\x1b[34mreceived block {:?} {:?} {:?} from {:?} window \x1b[7m{:}\x1b[m",
+            self.id,
+            block_number,
+            block_number * BLOCK_SIZE!(),
+            src,
+            i.next_block as i64 - block_number as i64
+        );
+        let this_eof = match self.eof {
+            Some(n) => {
+                debug!("got eof {:?}", n);
+                n
+            }
+            None => self.offset + self.base64.len() + 1,
+        };
 
-                if this_eof != i.eof {
-                    i.eof = this_eof;
-                    let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
-                    i.bitmap.resize(blocks, false);
-                }
+        if this_eof != i.eof {
+            i.eof = this_eof;
+            let blocks = (i.eof + BLOCK_SIZE!() - 1) / BLOCK_SIZE!();
+            i.bitmap.resize(blocks, false);
+        }
 
-                if i.bitmap[block_number] {
-                    info!("dup {block_number}");
-                    return vec![];
+        if i.bitmap[block_number] {
+            info!("dup {block_number}");
+            return vec![];
+        }
+        let good_block =
+            self.base64.len() == BLOCK_SIZE!() || self.base64.len() + self.offset == i.eof;
+        if good_block {
+            i.file.write_at(&self.base64, self.offset as u64).unwrap();
+            i.bytes_complete += self.base64.len();
+            i.bitmap.set(block_number, true);
+        }
+        message_out = i.request_next_block();
+        if good_block {
+            i.next_block += 1;
+        }
+        if (rand::thread_rng().gen::<u32>() % 101) == 0 {
+            for (_, i) in inbound_states.iter_mut() {
+                if i.next_block * BLOCK_SIZE!() >= i.eof {
+                    continue;
                 }
-                if self.base64.len() == BLOCK_SIZE!() || self.base64.len() + self.offset == i.eof {
-                    i.file.write_at(&self.base64, self.offset as u64).unwrap();
-                    i.bytes_complete += self.base64.len();
-                    i.bitmap.set(block_number, true);
-                }
-                message_out = i.request_next_block();
-                if self.base64.len() == BLOCK_SIZE!() || self.base64.len() + self.offset == i.eof {
-                    i.next_block += 1;
-                }
+                debug!("growing window for {0}", i.id);
+                i.request_blocks(ps, HashSet::from([src]));
+                i.next_block += 1;
+                break;
             }
-            if (rand::thread_rng().gen::<u32>() % 101) == 0 {
-                for (_, i) in inbound_states.iter_mut() {
-                    if i.next_block * BLOCK_SIZE!() >= i.eof {
-                        continue;
-                    }
-                    debug!("growing window for {0}", i.id);
-                    i.request_blocks(ps, HashSet::from([src]));
-                    i.next_block += 1;
-                    break;
-                }
-            }
-            let i = inbound_states.get_mut(&self.id).unwrap();
-            if i.bytes_complete == i.eof {
-                //EOF if the sha matches its done,
-                //not needed here then
-                let mut hasher = Sha256::new();
-                io::copy(&mut i.file, &mut hasher).ok();
-                let hash = format!("{:x}", hasher.finalize());
-                info!("{} sha256sum", hash);
-                if hash == i.id.to_lowercase() {
-                    info!("{0} finished {1} bytes", i.id, i.eof);
-                    println!("{0} finished {1} bytes", i.id, i.eof);
-                    let path = "./incoming/".to_owned() + &i.id;
-                    let new_path = "./".to_owned() + &i.id;
-                    fs::rename(path, new_path).unwrap();
-                    i.save_transfer_peers();
-                    inbound_states.remove(&self.id);
-                } else {
-                    error!("{} hash doesnt match! restarting", i.id);
-                    i.bitmap.fill(false);
-                    i.next_block = 0;
-                    i.bytes_complete = 0;
-                };
-            }
+        }
+        let i = inbound_states.get_mut(&self.id).unwrap();
+        if i.bytes_complete == i.eof {
+            // yes this could sha as it goes, but then its not testing as much as it could, for
+            // little real improvement, so dont do that
+            let mut hasher = Sha256::new();
+            io::copy(&mut i.file, &mut hasher).ok();
+            let hash = format!("{:x}", hasher.finalize());
+            info!("{} sha256sum", hash);
+            if hash == i.id.to_lowercase() {
+                info!("{0} finished {1} bytes", i.id, i.eof);
+                println!("{0} finished {1} bytes", i.id, i.eof);
+                let path = "./incoming/".to_owned() + &i.id;
+                let new_path = "./".to_owned() + &i.id;
+                fs::rename(path, new_path).unwrap();
+                i.save_transfer_peers();
+                inbound_states.remove(&self.id);
+            } else {
+                error!("{} hash doesnt match! restarting", i.id);
+                i.bitmap.fill(false);
+                i.next_block = 0;
+                i.bytes_complete = 0;
+            };
         }
         if message_out.len() == 0 {
             for (_, i) in inbound_states.iter_mut() {
@@ -672,6 +670,16 @@ impl Content {
                 message_out = i.request_next_block();
                 i.next_block += 1;
                 break;
+            }
+        }
+        match inbound_states.get_mut(&self.id) {
+            None => (),
+            Some(i) => {
+                if message_out.len() == 0 {
+                    i.next_block = 0;
+                    message_out = i.request_next_block();
+                    i.next_block += 1;
+                }
             }
         }
         return message_out;
@@ -718,17 +726,17 @@ impl InboundState {
             if self.next_block * BLOCK_SIZE!() >= self.eof {
                 // %EOF
                 info!(
-                    "\x1b[36m{} almost done {}/{} blocks done/remaining (eof: {}) , lowest unreceived block {:?} \x1b[m",
+                    "\x1b[36m{} almost done {}/{} blocks done/remaining (eof: {})  \x1b[m",
                     self.id,
                     self.bytes_complete / BLOCK_SIZE!(),
                     (self.eof - self.bytes_complete) / BLOCK_SIZE!(),
                     self.eof,
-                    self.bitmap.first_zero()
                 );
 
-                if log_enabled!(Level::Debug) {
+                if log_enabled!(Level::Trace) {
+                    // this can cause window loss in debug build
                     for i in self.bitmap.iter_zeros() {
-                        debug!("{i}");
+                        trace!("{i}");
                     }
                 }
 
