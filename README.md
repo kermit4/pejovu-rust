@@ -25,15 +25,10 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 # TODO
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere .. https://dasl.ing/ ?  blake3?
 - streaming (files that grow after they're started.. with a goal that someone streaming video to millions only needs enough bandwidth to send out one copy, live, with little delay.  Multicast, as real multicast never caught on on the internet sadly.).. i think the code is there, it just needs to say to not stop, infinite EOF, or just make eof optional..as all fields should be
-
 - remember to talk like people not a computer (naming)
-- 
 - this should be like a daemon, runnin locally, things can communate through it, rather than speak it directly?  localhost URLs?
-- 
 - streaming live cam of something is a good test case.. the sky .. ffmpeg -i /dev/video2 o.mkv .. 
-- 
 - lossy real time streams? it would require knowing the media's container block boundaries
-- 
 - CLI commands  / API, run as a daemon?  do we want each app speaking the protocol or using a daemon("node")?
 - mplayer seekable streams.   cli search.    
 - make this a rust crate? libcjp
