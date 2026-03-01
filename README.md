@@ -26,8 +26,6 @@ sha256sum
 
 or info/warn log levels
 
-the debug build won't care if you dont send AlwaysReturned, so easier for testing, but the debug build is slower.
-
 # TODO
 - need sub-hashes otherwise a bad bit may copy aroundd and the file may never complete correctly anywhere .. https://dasl.ing/ ?  blake3?
 - streaming (files that grow after they're started.. with a goal that someone streaming video to millions only needs enough bandwidth to send out one copy, live, with little delay.  Multicast, as real multicast never caught on on the internet sadly.).. i think the code is there, it just needs to say to not stop, infinite EOF, or just make eof optional..as all fields should be
