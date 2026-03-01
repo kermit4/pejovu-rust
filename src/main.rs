@@ -620,7 +620,21 @@ impl Content {
         let good_block =
             self.base64.len() == BLOCK_SIZE!() || self.base64.len() + self.offset == i.eof;
         if good_block {
-            i.file.write_at(&self.base64, self.offset as u64).unwrap();
+            if i.file.is_none() {
+                i.file = Some(
+                    OpenOptions::new()
+                        .create(true)
+                        .read(true)
+                        .write(true)
+                        .open("./incoming/".to_owned() + &i.id)
+                        .unwrap(),
+                )
+            }
+            i.file
+                .as_mut()
+                .unwrap()
+                .write_at(&self.base64, self.offset as u64)
+                .unwrap();
             i.bytes_complete += self.base64.len();
             i.bitmap.set(block_number, true);
         }
@@ -644,7 +658,7 @@ impl Content {
             // yes this could sha as it goes, but then its not testing as much as it could, for
             // little real improvement, so dont do that
             let mut hasher = Sha256::new();
-            io::copy(&mut i.file, &mut hasher).ok();
+            io::copy(i.file.as_mut().unwrap(), &mut hasher).ok();
             let hash = format!("{:x}", hasher.finalize());
             info!("{} sha256sum", hash);
             if hash == i.id.to_lowercase() {
@@ -687,7 +701,7 @@ impl Content {
 }
 //
 struct InboundState {
-    file: File,
+    file: Option<File>,
     next_block: usize,
     bitmap: BitVec,
     id: String,
@@ -700,14 +714,8 @@ struct InboundState {
 impl InboundState {
     fn new(inbound_states: &mut HashMap<String, InboundState>, id: &str) -> () {
         fs::create_dir("./incoming").ok();
-        let path = "./incoming/".to_owned() + &id;
         let mut i = InboundState {
-            file: OpenOptions::new()
-                .create(true)
-                .read(true)
-                .write(true)
-                .open(path)
-                .unwrap(),
+            file: None,
             next_block: 0,
             bitmap: BitVec::new(),
             id: id.to_string(),

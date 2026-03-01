@@ -45,4 +45,3 @@ the debug build won't care if you dont send AlwaysReturned, so easier for testin
 - rename anti_ddos and their_key_matched to not_spoofed_ip
 - rename anti_ddos and their_key_matched to not_spoofed_ip
 - send peers when asking for them? why not, be nice, save a RTT?
-- make demo needs ulimit, oops, change it to only open when started
